@@ -1,0 +1,1 @@
+Namespace(data_device='cuda', eval=False, images='images', model_path='out_path', multi_view_max_angle=30, multi_view_max_dis=1.5, multi_view_min_dis=0.01, multi_view_num=8, ncc_scale=1.0, preload_img=True, resolution=-1, sh_degree=3, source_path='/home/wangxiao/6d_pose_learn/src/myproject/data_path', white_background=False)
