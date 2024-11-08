@@ -36,6 +36,8 @@ class CameraInfo(NamedTuple):
     height: int
     fx: float
     fy: float
+    Cx: float
+    Cy: float
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -82,6 +84,10 @@ def load_poses(pose_path, num):
     return poses
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
+    '''
+    cam_extrinsics: 相机外参
+    cam_intrinsics: 相机内参
+    '''
     cam_infos = []
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
@@ -93,6 +99,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         intr = cam_intrinsics[extr.camera_id]
         height = intr.height
         width = intr.width
+
 
         uid = intr.id
         R = np.transpose(qvec2rotmat(extr.qvec))
@@ -107,6 +114,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
+            Cx = intr.params[2]
+            Cy = intr.params[3]
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
@@ -115,7 +124,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
         cam_info = CameraInfo(uid=uid, global_id=idx, R=R, T=T, FovY=FovY, FovX=FovX,
                               image_path=image_path, image_name=image_name, 
-                              width=width, height=height, fx=focal_length_x, fy=focal_length_y)
+                              width=width, height=height, fx=focal_length_x, fy=focal_length_y,
+                              Cx=Cx,Cy=Cy)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -157,6 +167,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
     reading_dir = "images" if images == None else images
+    # 查找对应图像 这里相机内参被转化为了fov视场，如果是裁剪过的图像，会造成一些问题
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
     # cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : int(x.image_name.split('_')[-1]))
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
@@ -187,6 +198,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     ply_path = os.path.join(path, "sparse/points3D.ply")
     bin_path = os.path.join(path, "sparse/points3D.bin")
     txt_path = os.path.join(path, "sparse/points3D.txt")
+    # 如果没有ply文件，就用bin文件或者txt文件生成一个
     if not os.path.exists(ply_path) or True:
         print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
         try:

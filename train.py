@@ -71,7 +71,8 @@ def gen_virtul_cam(cam, trans_noise=1.0, deg_noise=15.0):
     C2W[:3, :3] = C2W[:3, :3] @ R_perturbation
     C2W[:3, 3] = C2W[:3, 3] + translation_perturbation
     Rt = np.linalg.inv(C2W)
-    virtul_cam = Camera(100000, Rt[:3, :3].transpose(), Rt[:3, 3], cam.FoVx, cam.FoVy,
+    # 有bug
+    virtul_cam = Camera(100000, Rt[:3, :3].transpose(), Rt[:3, 3], cam.FoVx, cam.FoVy,cam.Cx,cam.Cy,
                         cam.image_width, cam.image_height,
                         cam.image_path, cam.image_name, 100000,
                         trans=np.array([0.0, 0.0, 0.0]), scale=1.0, 
@@ -94,10 +95,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     os.system(cmd)
 
     gaussians = GaussianModel(dataset.sh_degree)
-    # 
+
+    # 将数据集加载进来了 
     scene = Scene(dataset, gaussians)
+    # 初始化高斯参数
     gaussians.training_setup(opt)
 
+    # 是一个神经网络
     app_model = AppModel()
     app_model.train()
     app_model.cuda()
@@ -124,6 +128,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     debug_path = os.path.join(scene.model_path, "debug")
     os.makedirs(debug_path, exist_ok=True)
 
+    # 开始训练
     for iteration in range(first_iter, opt.iterations + 1):
         # if network_gui.conn == None:
         #     network_gui.try_connect()
@@ -146,9 +151,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        # Pick a random Camera
+        # Pick a random Camera 随机选择一个相机索引
+        # 检查栈是否为空 如果为空，则生成一个相机
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
+        # 随机选一个相机
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         gt_image, gt_image_gray = viewpoint_cam.get_image()
@@ -472,6 +479,7 @@ if __name__ == "__main__":
     torch.set_num_threads(8)
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
+    # -s _source_path 下划线在前面所以用缩写-s ，同理-m 为_model_path
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)

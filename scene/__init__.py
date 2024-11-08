@@ -27,6 +27,7 @@ class Scene:
     def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
         """b
         :param path: Path to colmap scene main folder.
+        ModelParams: 数据集数据
         """
         self.model_path = args.model_path
         self.loaded_iter = None
@@ -43,7 +44,7 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
-
+        # 加载colmap数据
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         
@@ -54,6 +55,7 @@ class Scene:
         else:
             assert False, "Could not recognize scene type!"
 
+        # 加载点云
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                 dest_file.write(src_file.read())
@@ -63,6 +65,7 @@ class Scene:
                 camlist.extend(scene_info.test_cameras)
             if scene_info.train_cameras:
                 camlist.extend(scene_info.train_cameras)
+            # enumerate包含每一个索引值和元组
             for id, cam in enumerate(camlist):
                 json_cams.append(camera_to_JSON(id, cam))
             with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:

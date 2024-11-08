@@ -1,0 +1,4 @@
+# ninja log v5
+0	9444	1729610446398121931	/home/wangxiao/6d_pose_learn/src/PGSR/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/simple_knn.o	c08403abf0c5a97e
+0	21418	1729610458354349800	/home/wangxiao/6d_pose_learn/src/PGSR/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/ext.o	c63279955bee073c
+1	44903	1729610481838797312	/home/wangxiao/6d_pose_learn/src/PGSR/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/spatial.o	c7c75920c224ce04

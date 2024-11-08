@@ -232,6 +232,12 @@ def read_intrinsics_binary(path_to_model_file):
     with open(path_to_model_file, "rb") as fid:
         num_cameras = read_next_bytes(fid, 8, "Q")[0]
         for _ in range(num_cameras):
+
+            # i：有符号整型（signed integer），占 4 个字节。
+            # i：有符号整型（signed integer），占 4 个字节。
+            # Q：无符号长整型（unsigned long long），占 8 个字节。
+            # Q：无符号长整型（unsigned long long），占 8 个字节。
+
             camera_properties = read_next_bytes(
                 fid, num_bytes=24, format_char_sequence="iiQQ")
             camera_id = camera_properties[0]

@@ -46,8 +46,11 @@ class ParamGroup:
 
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
+        # 如果属性名以 _ 开头，则使用短选项（如 -s），否则使用长选项（如 --source_path）。
         self.sh_degree = 3
+        # 输入数据路径
         self._source_path = ""
+        # 输出模型的路径
         self._model_path = ""
         self._images = "images"
         self._resolution = -1
@@ -65,6 +68,7 @@ class ModelParams(ParamGroup):
     def extract(self, args):
         g = super().extract(args)
         g.source_path = os.path.abspath(g.source_path)
+        # 修改成绝对路径
         return g
 
 class PipelineParams(ParamGroup):
