@@ -51,6 +51,7 @@ class GaussianModel:
 
         self.rotation_activation = torch.nn.functional.normalize
 
+
     def __init__(self, sh_degree : int):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
@@ -74,6 +75,12 @@ class GaussianModel:
         self.knn_idx = None
         self.setup_functions()
         self.use_app = False
+
+        # 用来做位姿优化的
+        self.enable_rigid_transform = False
+        self._delta_T = nn.Parameter(torch.zeros(3, dtype=torch.float, device="cuda").requires_grad_(False))
+        self._delta_R = nn.Parameter(torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float, device="cuda").requires_grad_(False))
+
 
     def capture(self):
         return (
@@ -120,6 +127,12 @@ class GaussianModel:
         self.denom_abs = denom_abs
         self.optimizer.load_state_dict(opt_dict)
 
+    # 初始化 优化参数，用来做位姿优化的
+    def initialize_pose(self):
+        self.enable_rigid_transform = True
+        self._delta_T.data = torch.zeros(3, dtype=torch.float, device="cuda")
+        self._delta_R.data = torch.tensor([1.0, 0.0, 0.0, 0.0], dtype=torch.float, device="cuda")
+
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
@@ -130,6 +143,9 @@ class GaussianModel:
     
     @property
     def get_xyz(self):
+        if self.enable_rigid_transform:
+            return torch.einsum('ij,kj->ki', build_rotation(self._delta_R.unsqueeze(0)).squeeze(0), self._xyz) + self._delta_T.unsqueeze(0)
+
         return self._xyz
     
     @property
@@ -141,6 +157,14 @@ class GaussianModel:
     @property
     def get_opacity(self):
         return self.opacity_activation(self._opacity)
+    
+    @property
+    def get_delta_pose(self):
+        delta_RT = torch.eye(4, device=self._delta_R.device)
+        Rmat = build_rotation(self._delta_R.unsqueeze(0)).squeeze(0)
+        delta_RT[:3, :3] = Rmat
+        delta_RT[:3, 3] = self._delta_T
+        return delta_RT
     
     def get_smallest_axis(self, return_idx=False):
         rotation_matrices = self.get_rotation_matrix()
@@ -396,6 +420,7 @@ class GaussianModel:
         "opacity": new_opacities,
         "scaling" : new_scaling,
         "rotation" : new_rotation}
+
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
         self._knn_f = optimizable_tensors["knn_f"]
@@ -554,4 +579,71 @@ class GaussianModel:
         T = torch.tensor(fov_camera.T).float().cuda()
         pts = (pts-T)@R.transpose(-1,-2)
         return pts
+    
+    def clip_to_bounding_box_fromfile(self,file):
+        
+        # 补充代码
+        with open(file, 'r') as f:
+            bbox_coords = []
+            for line in f:
+                coords = list(map(float, line.strip().split()))
+                bbox_coords.extend(coords)
+        # 补充代码
+        self.clip_to_bounding_box(bbox_coords)
+
+
+    def clip_to_bounding_box(self, bbox_coords):
+        # 将包围框坐标转换为张量
+        bbox_tensor = torch.tensor(bbox_coords, device="cuda").view(8, 3)
+        
+        # 计算最小和最大坐标
+        min_coords = bbox_tensor.min(dim=0)[0]
+        max_coords = bbox_tensor.max(dim=0)[0]
+
+        # 获取点云坐标
+        points = self._xyz
+
+        # 过滤点云中的点
+        mask = (points >= min_coords).all(dim=1) & (points <= max_coords).all(dim=1)
+        filtered_points = points[mask]
+
+        # 过滤其他属性
+        # filtered_knn_f = self._knn_f[mask]
+        filtered_features_dc = self._features_dc[mask]
+        filtered_features_rest = self._features_rest[mask]
+        filtered_scaling = self._scaling[mask]
+        filtered_rotation = self._rotation[mask]
+        filtered_opacity = self._opacity[mask]
+        # filtered_max_radii2D = self.max_radii2D[mask]
+        # filtered_max_weight = self.max_weight[mask]
+        # filtered_xyz_gradient_accum = self.xyz_gradient_accum[mask]
+        # filtered_xyz_gradient_accum_abs = self.xyz_gradient_accum_abs[mask]
+        # filtered_denom = self.denom[mask]
+        # filtered_denom_abs = self.denom_abs[mask]
+
+        # 更新模型中的点数据
+        self._xyz = nn.Parameter(filtered_points.requires_grad_(True))
+        # self._knn_f = nn.Parameter(filtered_knn_f.requires_grad_(True))
+        self._features_dc = nn.Parameter(filtered_features_dc.requires_grad_(True))
+        self._features_rest = nn.Parameter(filtered_features_rest.requires_grad_(True))
+        self._scaling = nn.Parameter(filtered_scaling.requires_grad_(True))
+        self._rotation = nn.Parameter(filtered_rotation.requires_grad_(True))
+        self._opacity = nn.Parameter(filtered_opacity.requires_grad_(True))
+        # self.max_radii2D = filtered_max_radii2D
+        # self.max_weight = filtered_max_weight
+        # self.xyz_gradient_accum = filtered_xyz_gradient_accum
+        # self.xyz_gradient_accum_abs = filtered_xyz_gradient_accum_abs
+        # self.denom = filtered_denom
+        # self.denom_abs = filtered_denom_abs
+
+        # 更新优化器的状态
+        # self.optimizer = torch.optim.Adam([
+        #     {'params': [self._xyz], 'lr': self.optimizer.param_groups[0]['lr'], "name": "xyz"},
+        #     {'params': [self._knn_f], 'lr': self.optimizer.param_groups[1]['lr'], "name": "knn_f"},
+        #     {'params': [self._features_dc], 'lr': self.optimizer.param_groups[2]['lr'], "name": "f_dc"},
+        #     {'params': [self._features_rest], 'lr': self.optimizer.param_groups[3]['lr'], "name": "f_rest"},
+        #     {'params': [self._opacity], 'lr': self.optimizer.param_groups[4]['lr'], "name": "opacity"},
+        #     {'params': [self._scaling], 'lr': self.optimizer.param_groups[5]['lr'], "name": "scaling"},
+        #     {'params': [self._rotation], 'lr': self.optimizer.param_groups[6]['lr'], "name": "rotation"}
+        # ], lr=0.0, eps=1e-15)
     

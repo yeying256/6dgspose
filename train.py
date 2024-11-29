@@ -96,7 +96,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     gaussians = GaussianModel(dataset.sh_degree)
 
-    # 将数据集加载进来了 
+    # 将数据集加载进来了 以及设置输出路径
     scene = Scene(dataset, gaussians)
     # 初始化高斯参数
     gaussians.training_setup(opt)

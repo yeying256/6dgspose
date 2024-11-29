@@ -56,6 +56,11 @@ class Camera(nn.Module):
                  ncc_scale=1.0,
                  preload_img=True, data_device = "cuda"
                  ):
+        '''
+            R:3x3的矩阵
+            T:3x1的向量
+            
+        '''
         super(Camera, self).__init__()
         self.uid = uid
         self.nearest_id = []
@@ -159,6 +164,7 @@ class MiniCam:
         view_inv = torch.inverse(self.world_view_transform)
         self.camera_center = view_inv[3][:3]
 
+# 它通过线性插值的方式生成一个新的相机位姿，并更新相机的变换矩阵。
 def sample_cam(cam_l: Camera, cam_r: Camera):
     cam = copy.copy(cam_l)
 
