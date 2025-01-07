@@ -118,9 +118,13 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
             Cy = intr.params[3]
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
-
-        # image_path = os.path.join(images_folder, os.path.basename(extr.name))
-        image_path = extr.name
+        
+        # 因为colmap他们的name是绝对路径，但是如果使用colmap直接搞出来的数据集，name只是名字，所以需要加一个images_folder
+        if '/' in extr.name:
+            image_path = extr.name
+        else:
+            image_path = os.path.join(images_folder, os.path.basename(extr.name))
+        
         image_name = os.path.basename(image_path).split(".")[0]
 
         cam_info = CameraInfo(uid=uid, global_id=idx, R=R, T=T, FovY=FovY, FovX=FovX,

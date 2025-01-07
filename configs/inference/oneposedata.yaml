@@ -1,0 +1,40 @@
+data:
+  dataname: "onepose"
+  # 这个是数据集的位置，下一级的数据是需要使用代码搜索的
+  dataset_dir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data"
+  # 因为每个onepose的数据集下面有几个subdir，名字后面加上 -1 -2等
+  subdir: "-1"
+  # 这个是每一个子数据下面的照片的路径
+  color: "color"
+  # 每一个3dgs的
+  gsdir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data_pgsr"
+  gs_subdir: "test/point_cloud/iteration_30000/point_cloud.ply"
+
+  # 这个是每一个子数据下面的相机参数的路径
+  pose: "poses_ba"
+  intrin: "intrin_ba"
+  box_dir: "box3d_corners.txt"
+
+  clip: True
+
+
+match:
+  extractor:
+    name: "SuperPoint"
+    max_num_keypoints: 2048
+  matcher: 
+    name: "LightGlue"
+    features: "superpoint"
+  confidence_threshold: 0.90
+
+  camera_num: 10
+  pnp_reprojection_error: 5
+  use_pose_refine: True
+
+
+
+
+
+
+
+

@@ -12,14 +12,18 @@ from pathlib import Path
 
 import open3d as o3d
 
-
-
-
-dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[2]
+dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[0]
+print(f"dir_path {dir_path}")
 sys.path.append(dir_path.__str__())
 
-from database import COLMAPDatabase  # NOQA
-from read_write_model import read_model, rotmat2qvec  # NOQA
+
+
+
+# dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[2]
+# sys.path.append(dir_path.__str__())
+
+from preprocess.database import COLMAPDatabase  # NOQA
+from preprocess.read_write_model import read_model, rotmat2qvec  # NOQA
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 

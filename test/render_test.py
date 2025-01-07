@@ -417,7 +417,7 @@ def main():
 
 
     class_gsrefine = GS_refine()
-    class_gsrefine.GS_Refiner(image=imag0_rgb_torch,init_camera=gs_camera,gaussians=obj_gaussians,return_loss=True,mask=None)
+    ret_outp = class_gsrefine.GS_Refiner(image=imag0_rgb_torch,init_camera=gs_camera,gaussians=obj_gaussians,return_loss=True,mask=None)
 
     ret_outp = GS_Refiner(image=imag0_rgb_torch, mask=None, init_camera=gs_camera, gaussians=obj_gaussians, return_loss=True)
 

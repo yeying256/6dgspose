@@ -30,6 +30,7 @@ def erode(bin_img, ksize=12):
     return out
 
 def process_image(image_path, resolution, ncc_scale):
+    print(image_path)
     image = Image.open(image_path)
     if len(image.split()) > 3:
         resized_image_rgb = torch.cat([PILtoTorch(im, resolution) for im in image.split()[:3]], dim=0)
@@ -49,9 +50,9 @@ def process_image(image_path, resolution, ncc_scale):
     return gt_image, gray_image, loaded_mask
 
 class Camera(nn.Module):
-    def __init__(self, colmap_id, R, T, FoVx, FoVy, Cx, Cy,
+    def __init__(self, R, T, FoVx, FoVy, Cx, Cy,
                  image_width, image_height,
-                 image_path, image_name, uid,
+                 image_path = '', image_name ='', uid = 0,colmap_id = 0, 
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, 
                  ncc_scale=1.0,
                  preload_img=True, data_device = "cuda"
@@ -59,6 +60,7 @@ class Camera(nn.Module):
         '''
             R:3x3的矩阵
             T:3x1的向量
+            输入的矩阵向量均为np格式
             
         '''
         super(Camera, self).__init__()

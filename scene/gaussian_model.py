@@ -593,6 +593,9 @@ class GaussianModel:
 
 
     def clip_to_bounding_box(self, bbox_coords):
+        '''
+        bbox_coords s
+        '''
         # 将包围框坐标转换为张量
         bbox_tensor = torch.tensor(bbox_coords, device="cuda").view(8, 3)
         

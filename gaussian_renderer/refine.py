@@ -76,7 +76,7 @@ class GS_refine:
                 USE_SSIM=True,
                 USE_MS_SSIM=True,
                 EARLY_STOP_MIN_STEPS=10,
-                EARLY_STOP_LOSS_GRAD_NORM=5e-6
+                EARLY_STOP_LOSS_GRAD_NORM=5e-5
                 )
         self.CFG = CFG
         self.SSIM_METRIC = SSIM(data_range=1, size_average=True, channel=3) # channel=1 for grayscale images
@@ -145,15 +145,15 @@ class GS_refine:
             # GS_Renderer是渲染器
             render_img = GS_Renderer(init_camera, gaussians, self.gaussian_PipeP, self.gaussian_BG)['render'] * trunc_mask
             # show_gs_img(render_img)
+            show_gs_img(render_img/2+target_img/2)
             # show_gs_img(target_img)
             loss = 0.0
 
             if self.CFG.USE_SSIM:
                 loss += (1 - self.SSIM_METRIC(render_img[None, ...], target_img[None, ...]))
-                # print(f"step ={iter_step} loss = {loss}")
+                print(f"step ={iter_step} loss = {loss}")
             if self.CFG.USE_MS_SSIM:
                 loss += (1 - self.MS_SSIM_METRIC(render_img[None, ...], target_img[None, ...]))
-            # loss.requires_grad=True
 
             loss.backward()
             optimizer.step()
