@@ -50,8 +50,8 @@ from misc_utils import match_utils
 # gs_path = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data_pgsr/0575-saltbottle-bottle/test/point_cloud/iteration_30000/point_cloud.ply"
 
 imag_path = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data/0499-tiramisufranzzi-box/tiramisufranzzi-1/color"
-img1 = cv2.imread(f'{imag_path}/106.png', cv2.IMREAD_GRAYSCALE)
-intrin1path = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data/0499-tiramisufranzzi-box/tiramisufranzzi-1/intrin_ba/106.txt"
+img1 = cv2.imread(f'{imag_path}/75.png', cv2.IMREAD_GRAYSCALE)
+intrin1path = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data/0499-tiramisufranzzi-box/tiramisufranzzi-1/intrin_ba/75.txt"
 img2 = cv2.imread(f'{imag_path}/10.png', cv2.IMREAD_GRAYSCALE)
 boxpath = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data/0499-tiramisufranzzi-box/box3d_corners.txt"
 gs_path = "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data_pgsr/0499-tiramisufranzzi-box/test/point_cloud/iteration_30000/point_cloud.ply"
@@ -92,8 +92,11 @@ for camera in cameras:
     render = GS_Renderer(camera, obj_gaussians, gaussian_PipeP, gaussian_BG)
     render_img = render['render']
 
-    # 这里每个像素单位是m
+    # 这里每个像素单位是m 
     deepsimg = render['plane_depth']
+    # deepsimg = render['rendered_distance']
+
+
 
     # depth_normalized = cv2.normalize(deepsimg.permute(1, 2, 0).detach().cpu().numpy(), None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     depth_normalized = deepsimg.permute(1, 2, 0).detach().cpu().numpy()
@@ -122,7 +125,8 @@ for camera in cameras:
     render_img_np = (render_img_np * 255).astype(np.uint8)
     if render_img_np.shape[0] == 3:
         render_img_np = np.transpose(render_img_np, (1, 2, 0))
-
+    
+    cv2.imshow('Colored rander Image', render_img_np)
     # 更改rgb改为gbr
     img_cv = render_img_np[:, :, [2, 1, 0]]
     # 调整通道顺序：从 [H, W, C] 到 [C, H, W]
@@ -178,7 +182,7 @@ for camera in cameras:
     matches = matches[valid_indices]
     filtered_scores = scores[valid_indices]
 
-    # 获取过滤后的匹配点坐标
+    # 获取过滤后的匹配点坐标 0是渲染的  1是目标图像
     points0 = feats0['keypoints'][matches[..., 0]]  # coordinates in image #0, shape (K', 2)
     points1 = feats1['keypoints'][matches[..., 1]]  # coordinates in image #1, shape (K', 2)
 

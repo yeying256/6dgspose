@@ -17,6 +17,7 @@ from scene.gaussian_model import GaussianModel
 from scene.app_model import AppModel
 from utils.sh_utils import eval_sh
 from utils.graphics_utils import normal_from_depth_image
+from scene.cameras import MiniCam,Camera
 
 def render_normal(viewpoint_cam, depth, offset=None, normal=None, scale=1):
     # depth: (H, W), bg_color: (3), alpha: (H, W)
@@ -32,7 +33,7 @@ def render_normal(viewpoint_cam, depth, offset=None, normal=None, scale=1):
     normal_ref = normal_ref.permute(2,0,1)
     return normal_ref
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, 
+def render(viewpoint_camera:Camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None, 
            app_model: AppModel=None, return_plane = True, return_depth_normal = True):
     """
     Render the scene. 
@@ -53,6 +54,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+    cx = viewpoint_camera.Cx
+    cy = viewpoint_camera.Cy
 
     means3D = pc.get_xyz
     means2D = screenspace_points
@@ -93,6 +96,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             image_width=int(viewpoint_camera.image_width),
             tanfovx=tanfovx,
             tanfovy=tanfovy,
+            cx=cx,
+            cy=cy,
             bg=bg_color,
             scale_modifier=scaling_modifier,
             viewmatrix=viewpoint_camera.world_view_transform,
@@ -173,6 +178,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         return_dict.update({"app_image": app_image})   
 
     if return_depth_normal:
+        # 是返回渲染的法向量
         depth_normal = render_normal(viewpoint_camera, plane_depth.squeeze()) * (rendered_alpha).detach()
         return_dict.update({"depth_normal": depth_normal})
     

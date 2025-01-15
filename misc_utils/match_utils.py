@@ -409,6 +409,7 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
 
 
         K_inv = camera.get_inv_k().cpu().numpy()
+        # 获取世界坐标系在相机坐标系中的表达，因为Camera中的R是以转置的形式储存的，所以取出来的时候要转置一下
         R = camera.R.T
         t = camera.T.reshape(3, 1)
         T = np.eye(4)
@@ -416,7 +417,10 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
         T[:3, 3] = t.flatten()
 
         # 改成了从世界坐标系到camera坐标系
-        T = np.linalg.inv(T)
+        # T = np.linalg.inv(T)
+        T_inv = np.eye(4)
+        T_inv[:3, :3] = T[:3, :3].T
+        T_inv[:3, 3] = -T_inv[:3, :3] @ T[:3, 3]
 
 
 
@@ -437,11 +441,28 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
 
         # 将相机坐标转换为世界坐标系下的3D坐标
         camera_coords = np.array([X_c, Y_c, Z_c,[1]]).reshape(4, 1)
-        world_coords = T @ camera_coords
+        world_coords = T_inv @ camera_coords
 
         world_coords = world_coords[:3,0]
 
         xyz_gs.append(world_coords)
+
+
+        # 可视化
+        gs_xyz_ws = np.array(xyz_gs, dtype=np.float32)
+
+
+
+        print(f"gs_xyz_ws.shape = {gs_xyz_ws.shape}")
+
+        # pcd = o3d.geometry.PointCloud()
+
+        # 将 NumPy 数组转换为 Open3D 的点云格式
+        # pcd.points = o3d.utility.Vector3dVector(gs_xyz_ws)
+        # coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+        # o3d.visualization.draw_geometries([pcd,coordinate_frame])
+
+
 
     return xy_org,xyz_gs
     pass
