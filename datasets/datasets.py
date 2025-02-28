@@ -10,6 +10,8 @@ print(f"dir_path {dir_path}")
 sys.path.append(dir_path.__str__())
 
 from datasets.onepose_dataset import onepose_dataset
+from datasets.linemod_dataset import linemod_dataset
+
 
 
 class datasets:
@@ -17,7 +19,8 @@ class datasets:
         dataname = config['data']['dataname']
         if dataname == "onepose":
             self.dataset = onepose_dataset(config)
-            pass
+        elif dataname == "linemod":
+            self.dataset = linemod_dataset(config)
         pass
     
 

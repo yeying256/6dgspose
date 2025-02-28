@@ -55,6 +55,9 @@ def main(config_file:str):
                                             initin1 = dataset.dataset.cam_intr_dir_lists[object],
                                             img_target_dir = dataset.dataset.color_dir_lists[object],
                                             object_name=object,dataset=dataset)
+        
+        
+
         # 拼接字典
         refine_metrics = {key: refine_metrics.get(key, []) + metrics.get(key, []) for key in set(refine_metrics) | set(metrics)}
         init_metrics = {key: init_metrics.get(key, []) + init_metric.get(key, []) for key in set(init_metrics) | set(init_metric)}

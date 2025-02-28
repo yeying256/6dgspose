@@ -68,7 +68,7 @@ class GS_refine:
             # }
             CFG = SimpleNamespace(
                 # 初始学习率
-                START_LR=5e-4,
+                START_LR=8e-4,
                 # 最大步数
                 MAX_STEPS=1000,
                 END_LR=1e-6,
@@ -76,7 +76,7 @@ class GS_refine:
                 USE_SSIM=True,
                 USE_MS_SSIM=True,
                 EARLY_STOP_MIN_STEPS=10,
-                EARLY_STOP_LOSS_GRAD_NORM=5e-5
+                EARLY_STOP_LOSS_GRAD_NORM=5e-6
                 )
         self.CFG = CFG
         self.SSIM_METRIC = SSIM(data_range=1, size_average=True, channel=3) # channel=1 for grayscale images
@@ -145,7 +145,7 @@ class GS_refine:
             # GS_Renderer是渲染器
             render_img = GS_Renderer(init_camera, gaussians, self.gaussian_PipeP, self.gaussian_BG)['render'] * trunc_mask
             # show_gs_img(render_img)
-            show_gs_img(render_img/2+target_img/2)
+            # show_gs_img(render_img/2+target_img/2)
             # show_gs_img(target_img)
             loss = 0.0
 

@@ -34,6 +34,10 @@ class onepose_dataset(dataset_base):
         # 3dbox文件夹
         self.box_dir = config['data']['box_dir']
 
+        self.metric_out_dir = config['metric_out_dir']
+
+        self.debug = config['debug']
+
         # 查找所有的子文件夹
         self.object_lists = os.listdir(self.dataset_dir)
         # 遍历所有的目标，比如说瓶子等
@@ -86,6 +90,8 @@ class onepose_dataset(dataset_base):
 
                     for imag in imags:
                         # 遍历所有的图片
+                        if not os.path.splitext(imag)[1] == '.png' and not os.path.splitext(imag)[1] == '.jpg':
+                            continue
                         self.color_dir_lists.setdefault(object_name,[]).append(os.path.join(color_forder_dir,imag))
                         txt_name = os.path.splitext(imag)[0] + '.txt'
                         self.cam_intr_dir_lists.setdefault(object_name,[]).append(os.path.join(cam_intr_dir,txt_name))

@@ -16,18 +16,41 @@ sys.path.append(dir_path.__str__())
 
 class dataset_base:
     def __init__(self) -> None:
-        #这里包含了 这个数据集的子目标的所有名字 
+        #这里包含了 这个数据集的子目标的所有名字 如果是linemod，就是标号，没有前面的0
         self.sub_name_lists = []
-        # 这里面包含了数据集的所有照片路径
+        self.ID_lists = []
+        # 这里面包含了数据集的所有照片路径 这里的id是去掉前面的0
         self.color_dir_lists:Dict[str, List[str]]  = {}
         # 所有相机内参路径
         self.cam_intr_dir_lists:Dict[str, List[str]]  = {}
+        self.cam_K_lists:Dict[str,List[np.ndarray]] = {}
+
         # 所有的位姿路径
         self.pose_dir_lists:Dict[str, List[str]]  = {}
+        self.pose_lists:Dict[str,List[np.ndarray]] = {}
         # 3dgs的
         self.gs_model_dir_lists:Dict[str, List[str]] = {}
         # box边界
         self.box_dir_lists:Dict[str,str] = {}
+        self.box:Dict[str,np.ndarray] = {}
+
+        # 3dgs的直径
+        self.diameter:Dict[str,float] ={}
+
+        self.is_sym:Dict[str,bool] ={}
+
+
+        self.metric_out_dir:str = ""
+
+        self.colmap_dir:str = ""
+
+        self.color_forder_name = ""
+
+        # 每张照片mask的路径
+        self.mask_dir_lists:Dict[str, List[str]]  = {}
+        self.maskforder_dir = ""
+        
+        self.debug = False
         pass
 
     def get_imag(self,imag_dir:str):

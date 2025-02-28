@@ -22,6 +22,16 @@ def calc_pose_error(pred_RT, gt_RT, unit='cm'):
     return R_err, t_err
 
 def calc_add_metric(model_3D_pts, diameter, pose_pred, pose_target, percentage=0.1, return_error=False, syn=False, model_unit='m'):
+    '''
+        model_3D_pts: 物体的3D模型点云数据。
+        diameter: 物体的直径。
+        pose_pred: 预测的姿态矩阵（包含旋转和平移）。
+        pose_target: 真实的姿态矩阵（包含旋转和平移）。
+        percentage: 误差阈值的比例，默认为0.1。
+        return_error: 是否返回误差值，默认为False。
+        syn: 是否为对称物体，默认为False。
+        model_unit: 模型单位，默认为'm'。
+    '''
     from scipy import spatial
     # Dim check:
     if pose_pred.shape[0] == 4:

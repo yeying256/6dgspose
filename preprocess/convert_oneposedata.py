@@ -197,13 +197,15 @@ def onepose_to_json(args):
 
     
 
+    
+
     i = 0
     # scene 储存了这个场景的名字
     for scene in scene_list:
         # if i > 1:
         #     print("结束了")
         #     break
-        # if not os.path.basename(scene) == '0575-saltbottle-bottle':
+        # if not os.path.basename(scene) == '0466-mfmilkcake-box':
         #     continue
         # 获取了每个数据集的路径
         scene_path = os.path.join(pnepose_path,scene)

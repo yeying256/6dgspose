@@ -327,7 +327,7 @@ def compute_query_pose_errors(
         # 返回的是4x4的np格式的位姿矩阵
         gs3d_delta_RT_np = result['gs3d_delta_RT']
         # gs3d_delta_RT_np[:3,:3] = 
-        gs3d_pose_inv = np.linalg.inv(gs3d_delta_RT_np)
+        # gs3d_pose_inv = np.linalg.inv(gs3d_delta_RT_np)
         query_pose_pred = (query_pose_pred_homo@gs3d_delta_RT_np)[:3,:]
 
         # query_pose_pred = (gs3d_pose_inv@query_pose_pred_homo)[:3,:]

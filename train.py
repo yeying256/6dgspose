@@ -172,13 +172,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image, viewspace_point_tensor, visibility_filter, radii = \
             render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
+
+        trunc_mask = (gt_image.sum(dim=0, keepdim=True) > 0.01).type(torch.float32)
         # Loss
-        ssim_loss = (1.0 - ssim(image, gt_image))
+        ssim_loss = (1.0 - ssim(image, gt_image,mask=trunc_mask))
         if 'app_image' in render_pkg and ssim_loss < 0.5:
             app_image = render_pkg['app_image']
-            Ll1 = l1_loss(app_image, gt_image)
+            Ll1 = l1_loss(app_image, gt_image,trunc_mask)
         else:
-            Ll1 = l1_loss(image, gt_image)
+            Ll1 = l1_loss(image, gt_image,trunc_mask)
         image_loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * ssim_loss
         loss = image_loss.clone()
         
@@ -198,9 +200,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             image_weight = (image_weight).clamp(0,1).detach() ** 2
             if not opt.wo_image_weight:
                 # image_weight = erode(image_weight[None,None]).squeeze()
-                normal_loss = weight * (image_weight * (((depth_normal - normal)).abs().sum(0))).mean()
+                normal_loss = weight * (image_weight * ((trunc_mask*(depth_normal - normal)).abs().sum(0))).mean()
             else:
-                normal_loss = weight * (((depth_normal - normal)).abs().sum(0)).mean()
+                normal_loss = weight * ((trunc_mask*(depth_normal - normal)).abs().sum(0)).mean()
             loss += (normal_loss)
 
         # multi-view loss

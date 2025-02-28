@@ -9,12 +9,20 @@ import math
 import sys
 from pathlib import Path
 
-
-import open3d as o3d
-
 dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[0]
 print(f"dir_path {dir_path}")
 sys.path.append(dir_path.__str__())
+
+import argparse
+import yaml
+import logging
+
+from datasets.datasets import datasets
+
+
+import open3d as o3d
+
+
 
 
 
@@ -188,53 +196,46 @@ def visualize_camera_poses(poses, scale=1.0):
     # 可视化相机位姿
     o3d.visualization.draw_geometries(frames)
 
-def onepose_to_json(args):
-    assert args.onepose_path, "Provide path to onepose dataset"
-    pnepose_path = args.onepose_path
-    sfm_output_path = args.colmap_output_path
+
+def load_yaml_config(config_file):
+    """加载 YAML 配置文件"""
+    with open(config_file, 'r', encoding='utf-8') as file:
+        try:
+            config = yaml.safe_load(file)
+            return config
+        except yaml.YAMLError as exc:
+            logging.error(f"Error loading YAML file: {exc}")
+            raise
+def main(config_file:str):
+
+    config = load_yaml_config(config_file)
+    linemod_dataset = datasets(config)
+
+    linemod_path = linemod_dataset.dataset.dataset_dir
+
+    color_forder_name = linemod_dataset.dataset.color_forder_name
+
+
     # 储存了数据集所有的路径
-    scene_list = os.listdir(pnepose_path)
+    # scene_list = os.listdir()
+    # 进入到每一个场景下
+    colmap_dir = linemod_dataset.dataset.colmap_dir
+    for scene in linemod_dataset.dataset.sub_name_lists:
 
-    
+        object_id = str(int(scene))
 
-    i = 0
-    # scene 储存了这个场景的名字
-    for scene in scene_list:
-        # if i > 1:
-        #     print("结束了")
-        #     break
-        # if not os.path.basename(scene) == '0575-saltbottle-bottle':
-        #     continue
-        # 获取了每个数据集的路径
-        scene_path = os.path.join(pnepose_path,scene)
-        # 测试
-        # scene_path = os.path.join(pnepose_path,'0575-saltbottle-bottle')
+        db_file = os.path.join(f"{colmap_dir}/{scene}", 'database.db')
+        sfm_dir = os.path.join(f"{colmap_dir}/{scene}", 'sparse')
+        imags_dir = os.path.join(f"{colmap_dir}/{scene}", 'images')
 
-        #   这个函数检查 scene_path 是否为一个目录。  这个条件检查 scene 字符串中是否包含子字符串 '-'。
-        if not os.path.isdir(scene_path) or '-' not in scene:
-            continue
-        # 进入到二级文件夹
-        sub_lists = os.listdir(scene_path)
-        for sub_list in sub_lists:
-            # 只取第一个数据集
-            if '-1' in sub_list:
-                # 获取这个数据集的路径
-                subpath = os.path.join(scene_path,sub_list)
-                break
-        # for end
-            
-        # 构建路径
-        color_dir = os.path.join(subpath, 'color')
-        db_file = os.path.join(f"{sfm_output_path}/{scene}", 'database.db')
-        sfm_dir = os.path.join(f"{sfm_output_path}/{scene}", 'sparse')
-        imags_dir = os.path.join(f"{sfm_output_path}/{scene}", 'images')
-
-        os.system(f"rm -rf {sfm_output_path}/{scene}/images/*")
-        os.system(f"rm -rf {sfm_output_path}/{scene}/sparse/*")
-        os.system(f"rm {sfm_output_path}/{scene}/database.db")
+        os.system(f"rm -rf {colmap_dir}/{scene}/images/*")
+        os.system(f"rm -rf {colmap_dir}/{scene}/sparse/*")
+        os.system(f"rm {colmap_dir}/{scene}/database.db")
         # 创建工作目录和一些文件夹
-        create_folder(f"{sfm_output_path}/{scene}/images")
-        create_folder(f"{sfm_output_path}/{scene}/sparse")
+        create_folder(f"{colmap_dir}/{scene}/images")
+        create_folder(f"{colmap_dir}/{scene}/sparse")
+
+        color_dir = os.path.join(f"{linemod_path}/{scene}/{color_forder_name}",)
         
         # extract features
         os.system(f"colmap feature_extractor --database_path {db_file} \
@@ -245,53 +246,30 @@ def onepose_to_json(args):
                 --SiftExtraction.num_threads=32"
                   )
 
-        #   --ImageReader.camera_params \"1485.0338812206555,1485.0338812206555,714.9350380907669,935.2746092331771\" 
-
-        
-        # # match features
-        # os.system(f"colmap exhaustive_matcher \
-        #         --database_path {db_file} \
-        #         --SiftMatching.use_gpu=true"
-        #           )
-        
-        # os.system(f"colmap exhaustive_matcher \
-        #         --database_path {db_file} \
-        #         --SiftMatching.use_gpu=true"
-        #         )
-                
-
-        # read pose
 
         # 获取列表
 
 
-        poses_ba_dir = os.path.join(subpath, 'poses_ba')
-        intrin_ba_dir = os.path.join(subpath, 'intrin_ba')
-
         # 获取文件列表并排序
-        images_lis = sorted(glob(os.path.join(color_dir, '*.png')))
-        poses_ba_lis = sorted(glob(os.path.join(poses_ba_dir, '*.txt')))
-        intrin_ba_lis = sorted(glob(os.path.join(intrin_ba_dir, '*.txt')))
+        # images_lis = sorted(glob(os.path.join(color_dir, '*.png')))
+
 
         # images_lis = glob(os.path.join(color_dir, '*.png'))
         # poses_ba_lis = glob(os.path.join(poses_ba_dir, '*.txt'))
         # intrin_ba_lis = glob(os.path.join(intrin_ba_dir, '*.txt'))
 
 
-        w, h = Image.open(images_lis[0]).size
+        w, h = Image.open(linemod_dataset.dataset.color_dir_lists[object_id][0]).size
         pinhole_dict = {}
         # enumerate 是一个内置函数，用于将一个可迭代对象（如列表）转换为一个枚举对象，该对象包含索引和值的元组。
-
+        
         poses = []
-        for idx, image in enumerate(images_lis):
+        for idx, image in enumerate(linemod_dataset.dataset.color_dir_lists[object_id]):
             # 取出这一个图像
             image = os.path.basename(image)
-            if not compare_filenames(images_lis[idx],poses_ba_lis[idx],intrin_ba_lis[idx]):
-                print(f"数据集对应不正确")
-                continue
             
             # 源程序p是投影矩阵 我们可以从数据集中直接取出相机位姿矩阵和相机内参矩阵
-            T_w2c = read_txt(poses_ba_lis[idx])
+            T_w2c = linemod_dataset.dataset.pose_lists[object_id][idx]
             # print(T_w2c)
 
             # T_w2c = np.linalg.inv(T_w2c)
@@ -299,7 +277,7 @@ def onepose_to_json(args):
             # T_w2c = np.transpose(T_w2c)
             
             
-            intrinsic_param = read_txt(intrin_ba_lis[idx])
+            intrinsic_param = linemod_dataset.dataset.cam_K_lists[object_id][idx]
             # 旋转矩阵改为四元数表示
             qvec = rotmat2qvec(T_w2c[:3, :3]).reshape(4, )
             tvec = T_w2c[:3, 3].reshape(3, )
@@ -330,7 +308,7 @@ def onepose_to_json(args):
         # 可视化相机位姿
         # visualize_camera_poses(poses, scale=0.01)
         # convert to colmap files 
-        pinhole_dict_file = os.path.join(f"{sfm_output_path}/{scene}", 'pinhole_dict.json')
+        pinhole_dict_file = os.path.join(f"{colmap_dir}/{scene}", 'pinhole_dict.json')
 
         with open(pinhole_dict_file, 'w') as fp:
             json.dump(pinhole_dict, fp, indent=2, sort_keys=True)
@@ -378,21 +356,25 @@ def onepose_to_json(args):
         os.system(f"colmap image_undistorter \
             --image_path {color_dir} \
             --input_path {sfm_dir} \
-            --output_path {sfm_output_path}/{scene} \
+            --output_path {colmap_dir}/{scene} \
             --output_type COLMAP"
                   )
-# "{sfm_output_path}/{scene}"
+        
+        
 
-    print(scene_list)
+        pass
+
+    
+
+    print(linemod_dataset.dataset.sub_name_lists)
 
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    parser.add_argument('--onepose_path', type=str, default=None)
-    parser.add_argument('--colmap_output_path', type=str, default=None)
-
-
+    parser = argparse.ArgumentParser(description="Load and process YAML configuration file.")
+    parser.add_argument('config_file', type=str, help="Path to the YAML configuration file")
     args = parser.parse_args()
 
-    onepose_to_json(args)
+    # 
+    # 调用 main 函数
+    main(args.config_file)

@@ -278,6 +278,7 @@ def read_list_data_from_txt(txt_path):
 
 
 def torch_compute_diameter_from_pointcloud(point_cloud, num_points=8192):
+    # 输入的函数是torch或者np的矩阵都可以
     point_cloud = torch.as_tensor(point_cloud, dtype=torch.float32).squeeze()
     assert (point_cloud.dim() == 2), 'Point cloud must be of shape (num_points, 3)'
     num_pts = len(point_cloud)
@@ -291,7 +292,7 @@ def torch_compute_diameter_from_pointcloud(point_cloud, num_points=8192):
     max_distance_index = torch.argmax(pairwise_distances)
 
     # Convert the flattened index to 2D coordinates
-    num_points = len(point_cloud)
+    # num_points = len(point_cloud)
     max_distance_row = max_distance_index // num_points
     max_distance_col = max_distance_index % num_points
 

@@ -56,6 +56,8 @@ RasterizeGaussiansBackwardCUDA(
     const torch::Tensor& projmatrix,
 	const float tan_fovx,
 	const float tan_fovy,
+	const float cx,
+	const float cy,
     const torch::Tensor& dL_dout_color,
 	const torch::Tensor& dL_dout_all_map,
 	const torch::Tensor& dL_dout_plane_depth,

@@ -215,6 +215,64 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4):
     return cameras
 
 
+def box2gscamera_linemod(width,height,K:np,box:np,camera_num:int = 4):
+    '''
+    此函数通过box和参数生成多个gs的camera
+    K:相机内参矩阵,np数组格式
+    box 边界框np数组格式
+    '''
+
+    cameras =[]
+
+
+    boxponit = convert_to_3d_points(box)
+    # 转换成内参矩阵
+    K = convert2K(K)
+    # item 是转化为标量
+    fx = K[0,0].item()
+    fy = K[1,1].item()
+    cx = K[0,2].item()
+    cy = K[1,2].item()
+
+
+    # max_distance返回最远的两个点
+    farthest_pair, max_line = find_farthest_points(boxponit)
+
+    
+    # 这里的
+
+    T_init = poses_init_lists(K=K,width=width,height=height,L=max_line,init_num=camera_num)
+
+    
+    
+
+    fovx = 2 * np.arctan(width / (2 * fx))
+    fovy = 2 * np.arctan(height / (2 * fy))
+
+    for i in range(T_init):
+
+        T_camera = T_init[i].cpu().numpy()
+
+        # print(f"T_camera = {T_camera}")
+
+
+        # 创建原始坐标系
+        original_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+        # 创建变换后的坐标系
+        transformed_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+        transformed_frame.transform(np.linalg.inv(T_camera))
+        # 可视化
+        # o3d.visualization.draw_geometries([original_frame, transformed_frame])
+        
+        camera = Camera(colmap_id=0,R=T_camera[:3,:3].T,T=T_camera[:3,3],
+                        FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
+                        image_name='',image_path='',uid=0,preload_img=False)
+        cameras.append(camera)
+        pass
+    # 返回的是一个相机队列
+    return cameras
+
+
 def read_txt(file):
     with open(file, 'r') as f:
         bbox_coords = []
@@ -294,6 +352,96 @@ def poses_init(K:torch.tensor,width,height,L):
 
 
     return initpose
+
+def T_rot_axis(theta , axis = 'z',return_torch=True,is_cuda = True):
+    '''
+    根据角度和旋转轴，返回一个描述旋转的齐次坐标变换的矩阵
+    '''
+
+        # 将角度转换为弧度制（如果输入是角度）
+    theta = np.radians(theta) if theta > 2 * np.pi else theta
+
+    # 初始化齐次坐标变换矩阵
+    T_rot = np.eye(4)
+
+    # 根据旋转轴计算旋转矩阵 R
+    if axis.lower() == 'x':
+        R = np.array([
+            [1, 0, 0],
+            [0, np.cos(theta), -np.sin(theta)],
+            [0, np.sin(theta), np.cos(theta)]
+        ])
+    elif axis.lower() == 'y':
+        R = np.array([
+            [np.cos(theta), 0, np.sin(theta)],
+            [0, 1, 0],
+            [-np.sin(theta), 0, np.cos(theta)]
+        ])
+    elif axis.lower() == 'z':
+        R = np.array([
+            [np.cos(theta), -np.sin(theta), 0],
+            [np.sin(theta), np.cos(theta), 0],
+            [0, 0, 1]
+        ])
+    else:
+        raise ValueError("无效的旋转轴！请指定 'x', 'y' 或 'z'。")
+
+    # 将旋转矩阵嵌入齐次坐标变换矩阵
+    T_rot[:3, :3] = R
+
+    if return_torch == True:
+        T_rot = torch.from_numpy(T_rot, dtype=torch.float32)
+
+        if is_cuda == True:
+            T_rot = T_rot.cuda()
+        pass
+
+    return T_rot
+    pass
+
+def poses_init_lists(K:torch.tensor,width,height,L,init_num=6):
+    '''
+    这个函数可以返回一系列的初始化相机位姿
+    L:是最大长度
+    K:是相机内参矩阵
+    '''
+    fx = K[0,0]
+    fy = K[1,1]
+
+    cx = K[0,2]
+    cy = K[1,2]
+
+    if width>=height:
+        min_length = height
+        f = K[1,1]
+    else:
+        min_length = width
+        f = K[0,0]
+    
+    min_distance = (L * f) / min_length
+    
+
+    delta_theta = math.pi/ (init_num+1)
+
+    # 生成很多T_init
+    T_init_list = []
+    for i in range(init_num):
+
+        T_init = torch.eye(4,dtype=torch.float32, device='cuda')
+        T_init[2,3] = min_distance
+        T_init[0,3] = -(min_distance *width/2 -cx*min_distance)/fx
+        T_init[1,3] = -(min_distance *height/2 -cy*min_distance)/fy
+
+        rot_R1 = T_rot_axis(-math.pi/2 + delta_theta*(i+1),axis='x',return_torch=True,is_cuda=True)
+        for i in range(init_num):
+            rot_R2 = T_rot_axis(2 * delta_theta*(i+1),axis='z',return_torch=True,is_cuda=True)
+
+
+            T_init_list.append(T_init @ rot_R1 @ rot_R2)
+
+        pass
+
+    return T_init_list
 
 def find_farthest_points(points):
     """
@@ -453,7 +601,7 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
 
 
 
-        print(f"gs_xyz_ws.shape = {gs_xyz_ws.shape}")
+        # print(f"gs_xyz_ws.shape = {gs_xyz_ws.shape}")
 
         # pcd = o3d.geometry.PointCloud()
 

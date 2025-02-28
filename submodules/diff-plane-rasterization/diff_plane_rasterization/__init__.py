@@ -130,6 +130,8 @@ class _RasterizeGaussians(torch.autograd.Function):
                 raster_settings.projmatrix, 
                 raster_settings.tanfovx, 
                 raster_settings.tanfovy, 
+                raster_settings.cx,
+                raster_settings.cy,
                 grad_out_color, 
                 grad_out_all_map,
                 grad_out_plane_depth,

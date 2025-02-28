@@ -15,11 +15,19 @@ from torch.autograd import Variable
 from math import exp
 import numpy as np
 
-def l1_loss(network_output, gt):
-    return torch.abs((network_output - gt)).mean()
+def l1_loss(network_output, gt,mask = None):
+    # 逐元素乘法
+    if mask is not None:
+        return torch.abs((network_output - gt)*mask).mean()
+    else:
+        return torch.abs((network_output - gt)).mean()
 
-def l2_loss(network_output, gt):
-    return ((network_output - gt) ** 2).mean()
+def l2_loss(network_output, gt,mask = None):
+    if mask is not None:
+        return torch.sqrt(((network_output - gt)*mask) ** 2).mean()
+    else:
+        return torch.sqrt((network_output - gt) ** 2).mean()
+    # return ((network_output - gt) ** 2).mean()
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
@@ -31,7 +39,16 @@ def create_window(window_size, channel):
     window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
     return window
 
-def ssim(img1, img2, window_size=11, size_average=True):
+def ssim(img1, img2, window_size=11, mask=None,size_average=True):
+    # channel = img1.size(-3)
+    # window = create_window(window_size, channel)
+
+    # if img1.is_cuda:
+    #     window = window.cuda(img1.get_device())
+    # window = window.type_as(img1)
+
+    # return _ssim(img1, img2, window, window_size, channel, size_average)
+
     channel = img1.size(-3)
     window = create_window(window_size, channel)
 
@@ -39,19 +56,49 @@ def ssim(img1, img2, window_size=11, size_average=True):
         window = window.cuda(img1.get_device())
     window = window.type_as(img1)
 
-    return _ssim(img1, img2, window, window_size, channel, size_average)
+    return _ssim(img1, img2, window, window_size, channel, size_average, mask)
 
-def _ssim(img1, img2, window, window_size, channel, size_average=True):
-    mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
-    mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)
+def _ssim(img1, img2, window, window_size, channel, size_average=True,mask=None):
+    # mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
+    # mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)
+
+    # mu1_sq = mu1.pow(2)
+    # mu2_sq = mu2.pow(2)
+    # mu1_mu2 = mu1 * mu2
+
+    # sigma1_sq = F.conv2d(img1 * img1, window, padding=window_size // 2, groups=channel) - mu1_sq
+    # sigma2_sq = F.conv2d(img2 * img2, window, padding=window_size // 2, groups=channel) - mu2_sq
+    # sigma12 = F.conv2d(img1 * img2, window, padding=window_size // 2, groups=channel) - mu1_mu2
+
+    # C1 = 0.01 ** 2
+    # C2 = 0.03 ** 2
+
+    # ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+    # if size_average:
+    #     return ssim_map.mean()
+    # else:
+    #     return ssim_map.mean(1).mean(1).mean(1)
+
+
+    # 如果 mask 不为 None，则扩展到与 img1 相同的形状
+    if mask is not None:
+        mask = mask.expand_as(img1)  # 扩展到与 img1 相同的通道数
+
+    def apply_mask(tensor, mask):
+        """如果 mask 存在，则应用 mask；否则返回原始 tensor"""
+        return tensor * mask if mask is not None else tensor
+
+    mu1 = F.conv2d(apply_mask(img1, mask), window, padding=window_size // 2, groups=channel)
+    mu2 = F.conv2d(apply_mask(img2, mask), window, padding=window_size // 2, groups=channel)
 
     mu1_sq = mu1.pow(2)
     mu2_sq = mu2.pow(2)
     mu1_mu2 = mu1 * mu2
 
-    sigma1_sq = F.conv2d(img1 * img1, window, padding=window_size // 2, groups=channel) - mu1_sq
-    sigma2_sq = F.conv2d(img2 * img2, window, padding=window_size // 2, groups=channel) - mu2_sq
-    sigma12 = F.conv2d(img1 * img2, window, padding=window_size // 2, groups=channel) - mu1_mu2
+    sigma1_sq = F.conv2d(apply_mask(img1 * img1, mask), window, padding=window_size // 2, groups=channel) - mu1_sq
+    sigma2_sq = F.conv2d(apply_mask(img2 * img2, mask), window, padding=window_size // 2, groups=channel) - mu2_sq
+    sigma12 = F.conv2d(apply_mask(img1 * img2, mask), window, padding=window_size // 2, groups=channel) - mu1_mu2
 
     C1 = 0.01 ** 2
     C2 = 0.03 ** 2
@@ -59,7 +106,11 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
 
     if size_average:
-        return ssim_map.mean()
+        if mask is not None:
+            valid_pixels = mask.sum()
+            return (ssim_map * mask).sum() / valid_pixels if valid_pixels > 0 else torch.tensor(0.0).to(ssim_map.device)
+        else:
+            return ssim_map.mean()
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 

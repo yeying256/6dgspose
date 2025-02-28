@@ -33,6 +33,8 @@ import torch.nn.functional as torch_F
 import cv2
 from scipy.spatial.transform import Rotation
 from misc_utils.warmup_lr import CosineAnnealingWarmupRestarts
+from misc_utils import gs_utils
+from misc_utils import metric_utils
 import string
 
 from lightglue import LightGlue, SuperPoint, DISK, SIFT, ALIKED, DoGHardNet
@@ -131,6 +133,9 @@ class match_2d3d():
         # 获取过滤后的匹配点坐标
         points0 = feats0['keypoints'][matches[..., 0]]  # coordinates in image #0, shape (K', 2)
         points1 = feats1['keypoints'][matches[..., 1]]  # coordinates in image #1, shape (K', 2)
+
+        # match_utils.draw_matches(torch_render, img_rgb, points0, points1, matches)
+
         img_xy = []
         gs_xyz_w = []
         if not len(matches) < 2:
@@ -237,9 +242,9 @@ class match_2d3d():
             # 更改rgb改为gbr
             img_cv = render_img_np[:, :, [2, 1, 0]] 
 
-            cv2.imshow('Rendered init imag', img_cv)
-            cv2.waitKey()  # 按任意键关闭窗口
-            cv2.destroyAllWindows()
+            # cv2.imshow('Rendered init imag', img_cv)
+            # cv2.waitKey()  # 按任意键关闭窗口
+            # cv2.destroyAllWindows()
 
 
             class_gsrefine = GS_refine()
@@ -253,13 +258,14 @@ class match_2d3d():
             gs3d_delta_RT_np = output['gs3d_delta_RT']
             # gs3d_delta_RT_np[:3,:3] = 
             gs3d_pose_inv = np.linalg.inv(gs3d_delta_RT_np)
+            init_T = T_
             T_ = (T_@gs3d_delta_RT_np)
 
 
-        return T_
+        return T_,init_T
     
 
-    def pose_estimate_batch(self,img_target_dir:List[str],GS_model_dir:str,initin1:List[str],bbox_coords:str):
+    def pose_estimate_batch(self,img_target_dir:List[str],GS_model_dir:str,initin1:List[str],bbox_coords:str,object_name:str,dataset:datasets):
         '''
         处理一个场景的位姿估计
         '''
@@ -267,13 +273,173 @@ class match_2d3d():
         GS_model.load_ply(GS_model_dir)
         GS_model.clip_to_bounding_box_fromfile(bbox_coords)
         bbox_coords_np = match_utils.read_txt(bbox_coords)
+        bbox_points_np = match_utils.convert_to_3d_points(bbox_coords_np)
+        with open(dataset.dataset.metric_out_dir, 'a') as f :
+            f.write(f"{object_name}\n")
 
+        # 计算直径
+        dataset.dataset.diameter[object_name] = gs_utils.torch_compute_diameter_from_pointcloud(GS_model._xyz)
+
+        metrics = {"R_errs":[],
+                   "t_errs":[]}
+        init_metrics = {"R_errs":[],
+                   "t_errs":[]}
         for i in tqdm(range(0,len(img_target_dir)),desc="Processing images"):
             img_target = cv2.imread(img_target_dir[i])
             initin_np = match_utils.read_txt(initin1[i])
             print(f"initin1[i] = {initin1[i]}")
             print(f"img_target_dir[i] = {img_target_dir[i]}")
-            self.pose_estimate(img_target=img_target,GS_model=GS_model,initin1=initin_np,bbox_coords=bbox_coords_np)
+            T_p,init_T = self.pose_estimate(img_target=img_target,GS_model=GS_model,initin1=initin_np,bbox_coords=bbox_coords_np)
+
+            camK = match_utils.convert2K(initin_np)
+            # 读取数据集pose
+            pose_data = match_utils.read_txt(dataset.dataset.pose_dir_lists[object_name][i])
+            pose_data_np = np.array(pose_data).reshape(4, 4)
+            
+            # 初始的位姿
+            init_add = metric_utils.calc_add_metric(GS_model._xyz.detach().cpu().numpy(), dataset.dataset.diameter[object_name],init_T,pose_data_np)
+            # 优化的位姿
+            refine_add = metric_utils.calc_add_metric(GS_model._xyz.detach().cpu().numpy(), dataset.dataset.diameter[object_name],T_p,pose_data_np)
+            
+            # refine的数据
+            if 'ADD_metric' not in metrics.keys():
+                metrics['ADD_metric'] = list()
+            metrics['ADD_metric'].append(refine_add)
+
+            refine_proj_err = metric_utils.calc_projection_2d_error(bbox_points_np, T_p, pose_data_np, camK.cpu().numpy())
+            if 'Proj2D' not in metrics.keys():
+                metrics['Proj2D'] = list()
+            metrics['Proj2D'].append(refine_proj_err)
+
+
+            R_err,t_err= metric_utils.calc_pose_error(T_p,pose_data_np)
+            metrics["R_errs"].append(R_err)
+            metrics["t_errs"].append(t_err)
+
+
+            # init的数据
+
+            if 'ADD_metric' not in init_metrics.keys():
+                init_metrics['ADD_metric'] = list()
+            init_metrics['ADD_metric'].append(init_add)
+
+            refine_proj_err = metric_utils.calc_projection_2d_error(bbox_points_np, init_T, pose_data_np, camK.cpu().numpy())
+            if 'Proj2D' not in init_metrics.keys():
+                init_metrics['Proj2D'] = list()
+            init_metrics['Proj2D'].append(refine_proj_err)
+
+
+            R_err_init,t_err_init= metric_utils.calc_pose_error(init_T,pose_data_np)
+            init_metrics["R_errs"].append(R_err_init)
+            init_metrics["t_errs"].append(t_err_init)
+
+
             pass
+
+
+        agg_metric = metric_utils.aggregate_metrics(metrics)
+
+        init_agg_metric = metric_utils.aggregate_metrics(init_metrics)
+
+        with open(dataset.dataset.metric_out_dir, 'a') as f :
+            f.write(f"name = {object_name} : \n")
+
+            f.write("init_metric\n")
+            for key, value in init_agg_metric.items():
+                f.write(f"{key}: {value}\n")
+            f.write("refine_metric\n")
+            for key, value in agg_metric.items():
+                f.write(f"{key}: {value}\n")
+
+
+        print(agg_metric)
+        return metrics,init_metrics
     pass
+    
+
+
+
+
+
+    def pose_estimate_linemod(self,img_target:np.ndarray,GS_model:GaussianModel,initin1:List[float],bbox_coords:List[float]):
+
+        # img1 = cv2.imread(f'{imag_path}/55.png', cv2.IMREAD_GRAYSCALE)
+        height, width = img_target.shape[:2]
+
+
+
+        cameras = match_utils.box2gscamera_linemod(box=bbox_coords,K=initin1,height=height,width=width,camera_num=self.camera_num)
+
+
+        img_xys,gs_xyz_ws = self.camera_matchs(cameras= cameras,GS_model= GS_model,img_target=img_target)
+
+        dist_coeffs = np.zeros(shape=[8, 1], dtype="float64")
+        T_ = np.eye(4)
+        try:
+            _, rvec, tvec, inliers = cv2.solvePnPRansac(gs_xyz_ws, img_xys,cameras[0].get_k().cpu().numpy(),dist_coeffs,
+                    reprojectionError=self.pnp_reprojection_error,
+                    iterationsCount=10000,
+                    flags=cv2.SOLVEPNP_EPNP)
+            # 1. 将旋转向量 rvec 转换为旋转矩阵 R
+            R_, _ = cv2.Rodrigues(rvec)
+
+            # 2. 构建齐次变换矩阵 T
+            # 初始化一个 4x4 的单位矩阵
+
+
+            # 将旋转矩阵 R 放入 T 的前 3x3 区域
+            T_[:3, :3] = R_
+
+            # 将平移向量 t 放入 T 的前 3 行的最后一列
+            T_[:3, 3] = tvec.flatten()
+        except:
+            print("No inliers found.")
+
+        if self.use_pose_refine == True:
+            K = match_utils.convert2K(initin1)
+            # item 是转化为标量
+            fx = K[0,0].item()
+            fy = K[1,1].item()
+            cx = K[0,2].item()
+            cy = K[1,2].item()
+            fovx = 2 * np.arctan(width / (2 * fx))
+            fovy = 2 * np.arctan(height / (2 * fy))
+            # cameras = box2gscamera(box=bbox_coords,K=initin1,height=height,width=width,camera_num=7)
+            camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
+                            FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
+                            image_name='',image_path='',uid=0,preload_img=False)
+
+            render_init = GS_Renderer(camera, GS_model, self.gaussian_PipeP, self.gaussian_BG)
+
+            render_init_img = render_init['render']
+
+            render_img_np = render_init_img.permute(1, 2, 0).detach().cpu().numpy()
+            render_img_np = (render_img_np * 255).astype(np.uint8)
+            if render_img_np.shape[0] == 3:
+                render_img_np = np.transpose(render_img_np, (1, 2, 0))
+
+            # 更改rgb改为gbr
+            img_cv = render_img_np[:, :, [2, 1, 0]] 
+
+            # cv2.imshow('Rendered init imag', img_cv)
+            # cv2.waitKey()  # 按任意键关闭窗口
+            # cv2.destroyAllWindows()
+
+
+            class_gsrefine = GS_refine()
+
+
+            imag0_rgb = cv2.cvtColor(img_target, cv2.COLOR_BGR2RGB)
+            imag0_rgb_torch = torch.from_numpy(imag0_rgb).float().to('cuda')
+            output = class_gsrefine.GS_Refiner(image=imag0_rgb_torch,mask=None,init_camera=camera,gaussians=GS_model,return_loss=True)
+        
+            # 返回的是4x4的np格式的位姿矩阵
+            gs3d_delta_RT_np = output['gs3d_delta_RT']
+            # gs3d_delta_RT_np[:3,:3] = 
+            gs3d_pose_inv = np.linalg.inv(gs3d_delta_RT_np)
+            init_T = T_
+            T_ = (T_@gs3d_delta_RT_np)
+
+
+        return T_,init_T
     
