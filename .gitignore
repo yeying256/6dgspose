@@ -239,4 +239,4 @@ pretrained
 .history
 .hydra/**
 
-gspose_model
+gspose_model/
