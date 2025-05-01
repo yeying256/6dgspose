@@ -15,9 +15,12 @@ data:
   intrin: "intrin_ba"
   box_dir: "box3d_corners.txt"
 
+  debug_target: 
+    - "0408-colorbox-box"
+
   clip: True
 
-debug: False
+debug: True
 match:
   extractor:
     name: "SuperPoint"
@@ -43,7 +46,7 @@ refine:
   USE_MS_SSIM : True
   EARLY_STOP_MIN_STEPS : 10
   EARLY_STOP_LOSS_GRAD_NORM : 2.0e-5
-metric_out_dir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/test_data_pgsr/metric_out.txt"
+metric_out_dir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/test_data_pgsr/metric_debug.txt"
 
 camera_gap: 4
 

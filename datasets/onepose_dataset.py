@@ -11,6 +11,7 @@ sys.path.append(dir_path.__str__())
 
 # 调用基类
 from datasets.dataset_base import dataset_base
+from types import SimpleNamespace
 
 
 class onepose_dataset(dataset_base):
@@ -37,6 +38,27 @@ class onepose_dataset(dataset_base):
         self.metric_out_dir = config['metric_out_dir']
 
         self.debug = config['debug']
+
+        self.refine_CFG = SimpleNamespace(
+            # 初始学习率
+            START_LR=config['refine']['START_LR'],
+            # 最大步数
+            MAX_STEPS=config['refine']['MAX_STEPS'],
+            END_LR=config['refine']['END_LR'],
+            WARMUP=config['refine']['WARMUP'],
+            USE_SSIM=config['refine']['USE_SSIM'],
+            USE_MS_SSIM=config['refine']['USE_MS_SSIM'],
+            EARLY_STOP_MIN_STEPS=config['refine']['EARLY_STOP_MIN_STEPS'],
+            EARLY_STOP_LOSS_GRAD_NORM=config['refine']['EARLY_STOP_LOSS_GRAD_NORM']
+            )
+        
+        try:
+            self.debug_target = config['data']['debug_target']
+        except:
+            self.debug_target = None
+        
+
+        self.camera_gap = config['camera_gap']
 
         # 查找所有的子文件夹
         self.object_lists = os.listdir(self.dataset_dir)

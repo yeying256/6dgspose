@@ -11,8 +11,22 @@ dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[0]
 print(f"dir_path {dir_path}")
 sys.path.append(dir_path.__str__())
 
+from configs import inference_cfg as CFG
+from misc_utils import gs_utils
+import torch
+import torch.nn.functional as torch_F
+from torchvision.ops import roi_align
+from pytorch3d import ops as py3d_ops
+from PIL import Image
+
+import cv2
+import time
+
+
 # 调用基类
 from datasets.dataset_base import dataset_base
+
+from types import SimpleNamespace
 
 
 
@@ -41,7 +55,7 @@ def extract_model_info(json_file):
     # 遍历每个模型的信息
     for model_id, info in models_info.items():
         # 提取直径
-        diameter[model_id] = float(info['diameter'])
+        diameter[model_id] = float(info['diameter'])/1000.0
 
         # 计算 bounding box 的 8 个顶点坐标
         min_x, max_x = info['min_x'], info['min_x'] + info['size_x']
@@ -57,7 +71,7 @@ def extract_model_info(json_file):
             [max_x, max_y, max_z],  # 右上前
             [min_x, max_y, max_z]   # 左上前
         ])
-        box[model_id] = vertices
+        box[model_id] = vertices/1000.0
 
         # 判断是否有对称性
         if 'symmetries_continuous' in info or 'symmetries_discrete' in info:
@@ -191,18 +205,54 @@ class linemod_dataset(dataset_base):
 
         self.debug = config['debug']
 
+        # 获取每个对象的直径，边界框，是否是对称的
         self.diameter,self.box,self.is_sym = extract_model_info(self.box_dir)
 
         self.maskforder_dir = config['data']['maskforder_dir']
 
+        self.no_obj_lists = config['data']['no_target_name_lists']
 
-        
+
+        ref_dir = config['data']['data_ref_dir']
+
+        self.camera_distance_scale = config['camera_distance_scale']
         # 查找所有的子文件夹
-        self.sub_name_lists = os.listdir(self.dataset_dir)
+        objs = os.listdir(self.dataset_dir)
+
+        try:
+            self.ref_output_dir = config['ref_output_dir']
+        except:
+            self.ref_output_dir = None
+
+        # refin参数
+        self.refine_CFG = SimpleNamespace(
+                # 初始学习率
+                START_LR=config['refine']['START_LR'],
+                # 最大步数
+                MAX_STEPS=config['refine']['MAX_STEPS'],
+                END_LR=config['refine']['END_LR'],
+                WARMUP=config['refine']['WARMUP'],
+                USE_SSIM=config['refine']['USE_SSIM'],
+                USE_MS_SSIM=config['refine']['USE_MS_SSIM'],
+                EARLY_STOP_MIN_STEPS=config['refine']['EARLY_STOP_MIN_STEPS'],
+                EARLY_STOP_LOSS_GRAD_NORM=config['refine']['EARLY_STOP_LOSS_GRAD_NORM']
+                )
+        
+        self.gspose_model_path = config['gspose_model_path']
+
+        self.log_dir = config['log_dir']
+
         # 遍历所有的目标，比如说瓶子等
-        for object_name in self.sub_name_lists:
+        for object_name in objs:
             # 这里的文件夹前面带着好多0
 
+            # 如果在排除的目标列表中，则跳过
+            if object_name in self.no_obj_lists:
+                continue
+            else:
+                self.sub_name_lists.append(object_name)
+
+            
             if object_name.isdigit():  # 确保文件名是纯数字
                 number = str(int(object_name))  # 转换为整数以去掉前导零
             else:
@@ -225,10 +275,22 @@ class linemod_dataset(dataset_base):
             pose_dir = os.path.join(temp_dir,self.pose_forder_name)
             homogeneous_matrices = extract_homogeneous_matrices_from_file(pose_dir)
 
+            ref_pose_id = extract_homogeneous_matrices_from_file(f"{ref_dir}/{object_name}/{self.pose_forder_name}")
+            
+            for id_ in ref_pose_id:
+                self.ref_T.setdefault(id,[]).append(ref_pose_id[id_])
+                pass
+            
+            camera_K_ref = extract_cam_K_from_file(f"{ref_dir}/{object_name}/{intrinsics_forder_name}")
+            for id_ in camera_K_ref:
+                # self.ref_T.setdefault(id,[]).append(ref_pose_id[id_])
+                self.ref_K.setdefault(id,[]).append(camera_K_ref[id_])
+                pass
+
+            # = extract_homogeneous_matrices_from_file(f"{ref_dir}/{object_name}/{self.pose_forder_name}")
             # 查找mask
             masks_dirs = search_mask_dir(f'{temp_dir}/{self.maskforder_dir}')
 
-            
             for imag in imags:
                 # 遍历所有的图片
                 if not os.path.splitext(imag)[1] == '.png' and not os.path.splitext(imag)[1] == '.jpg':
@@ -240,6 +302,11 @@ class linemod_dataset(dataset_base):
                 self.pose_lists.setdefault(id,[]).append(homogeneous_matrices[img_id])
                 self.mask_dir_lists.setdefault(id,[]).append(masks_dirs[img_id])
 
+                allo_pose = homogeneous_matrices[img_id].copy()
+                allo_pose[:3,:3] = gs_utils.egocentric_to_allocentric(homogeneous_matrices[img_id])[:3,:3]
+
+                self.allo_pose_lists.setdefault(id,[]).append(allo_pose)
+
                 # txt_name = os.path.splitext(imag)[0] + '.txt'
                 # self.cam_intr_dir_lists.setdefault(id,[]).append(os.path.join(cam_intr_dir,txt_name))
                 # self.pose_dir_lists.setdefault(id,[]).append(os.path.join(pose_dir,txt_name))
@@ -247,10 +314,206 @@ class linemod_dataset(dataset_base):
 
             pass
             temp = os.path.join(self.cwd_3dgs,object_name,self.gs_subdir)
-            self.gs_model_dir_lists.setdefault(object_name,temp)
+            self.gs_model_dir_lists.setdefault(id,temp)
             
 
 
 
         pass
     pass
+
+
+def create_reference_database_from_RGB_images(model_func, 
+                                            obj_dataset:linemod_dataset,
+                                            device="cuda",
+                                            save_pred_mask=False,
+                                            id = ""):    
+    '''
+    model_func:预训练的gspose模型
+    obj_dataset:数据集
+    device:cuda是否用显卡
+    id:目标id 如 '1','2'…… 去掉前面0的字符串类型
+    '''
+    # if CFG.USE_ALLOCENTRIC:
+    #     # true
+    #     # 大概就是以目标为坐标系中心
+    #     obj_poses = np.stack(obj_dataset.allo_poses, axis=0)
+    # else:
+    #     # 这就是大概以相机位姿为中心
+    #     obj_poses = np.stack(obj_dataset.poses, axis=0)
+                
+    obj_poses = obj_dataset.allo_pose_lists[id]
+
+    obj_poses = torch.as_tensor(obj_poses, dtype=torch.float32).to(device)
+    obj_matRs = obj_poses[:, :3, :3]
+    obj_vecRs = obj_matRs[:, 2, :3]
+    # 选出来一系列的图像 采样出来CFG.refer_view_num个点
+    fps_inds = py3d_ops.sample_farthest_points(
+        obj_vecRs[None, :, :], K=CFG.refer_view_num, random_start_point=False)[1].squeeze(0)  # obtain the FPS indices
+    ref_fps_images = list()
+    ref_fps_poses = list()
+    ref_fps_camKs = list()
+    for ref_idx in fps_inds:
+        # 获取第ref_idx个图像的信息，是个序号
+
+        view_idx = ref_idx.item()
+        # datum = obj_dataset[view_idx]
+        camK = torch.as_tensor(obj_dataset.cam_K_lists[id][ref_idx], dtype=torch.float32)
+        # camK = datum['camK']      # 3x3
+        # 出来的是rgb通道的，然后归一化处理了
+        image_np = np.array(Image.open(obj_dataset.color_dir_lists[id][ref_idx]), dtype=np.uint8) / 255.0
+        image = torch.as_tensor(image_np, dtype=torch.float32)   
+        # image = 
+
+        # image = datum['image']    # HxWx3
+        # 如果 'allo_pose' 不存在，则返回默认值 datum['pose']。
+        # pose = datum.get('allo_pose', datum['pose']) # 4x4
+        pose = torch.as_tensor(obj_dataset.allo_pose_lists[id][ref_idx], dtype=torch.float32)
+
+        ref_fps_images.append(image)
+        ref_fps_poses.append(pose)
+        ref_fps_camKs.append(camK)
+    ref_fps_poses = torch.stack(ref_fps_poses, dim=0)
+    ref_fps_camKs = torch.stack(ref_fps_camKs, dim=0)
+    ref_fps_images = torch.stack(ref_fps_images, dim=0)
+    # 把这些图像裁剪一下
+    zoom_fps_images = gs_utils.zoom_in_and_crop_with_offset(image=ref_fps_images, # KxHxWx3 -> KxSxSx3
+                                                                K=ref_fps_camKs, 
+                                                                t=ref_fps_poses[:, :3, 3], 
+                                                                radius=obj_dataset.diameter[id]/2,
+                                                                target_size=CFG.zoom_image_scale, 
+                                                                margin=CFG.zoom_image_margin)['zoom_image']
+    with torch.no_grad():
+        # 适配 PyTorch 输入：将 (B,H,W,C) 转为 (B,C,H,W)。
+        if zoom_fps_images.shape[-1] == 3:
+            zoom_fps_images = zoom_fps_images.permute(0, 3, 1, 2)
+        # 使用DINOv2提取特征
+        obj_fps_feats, _, obj_fps_dino_tokens = model_func.extract_DINOv2_feature(zoom_fps_images.to(device), return_last_dino_feat=True) # Kx768x16x16
+        # obj_fps_feats：用于后续分割任务的特征。
+        # obj_fps_dino_tokens：DINOv2 的特征向量。
+        obj_fps_masks = model_func.refer_cosegmentation(obj_fps_feats).sigmoid() # Kx1xSxS
+
+        obj_token_masks = torch_F.interpolate(obj_fps_masks,
+                                             scale_factor=1.0/model_func.dino_patch_size, 
+                                             mode='bilinear', align_corners=True, recompute_scale_factor=True) # Kx1xS/14xS/14
+        obj_fps_dino_tokens = obj_fps_dino_tokens.flatten(0, 1)[obj_token_masks.view(-1).round().type(torch.bool), :] # KxLxC -> KLxC -> MxC
+
+    refer_allo_Rs = list()
+    refer_pred_masks = list()
+    refer_Remb_vectors = list()
+    refer_coseg_mask_info = list()
+    num_instances = len(obj_dataset.cam_K_lists[id])
+
+    # 这里是每一张图片
+    for idx in range(num_instances):
+        # ref_data = obj_dataset[idx]
+
+        # camK = ref_data['camK']
+        camK = torch.as_tensor(obj_dataset.cam_K_lists[id][idx],dtype=torch.float32)
+
+        # image = ref_data['image']
+        image_np = np.array(Image.open(obj_dataset.color_dir_lists[id][idx]), dtype=np.uint8) / 255.0
+        image = torch.as_tensor(image_np, dtype=torch.float32)   
+
+        pose = torch.as_tensor(obj_dataset.allo_pose_lists[id][idx],dtype=torch.float32)
+
+
+        # pose = ref_data.get('allo_pose', ref_data['pose']) # 4x4
+
+        refer_allo_Rs.append(pose[:3, :3])
+        ref_tz = (1 + CFG.zoom_image_margin) * camK[:2, :2].max() * obj_dataset.diameter[id] / CFG.zoom_image_scale
+        zoom_outp = gs_utils.zoom_in_and_crop_with_offset(image=image, # HxWx3 -> SxSx3
+                                                            K=camK, 
+                                                            t=pose[:3, 3], 
+                                                            radius=obj_dataset.diameter[id]/2,
+                                                            target_size=CFG.zoom_image_scale, 
+                                                            margin=CFG.zoom_image_margin) # SxSx3
+        with torch.no_grad():
+            zoom_image = zoom_outp['zoom_image'].unsqueeze(0)
+            if zoom_image.shape[-1] == 3:
+                zoom_image = zoom_image.permute(0, 3, 1, 2)
+            zoom_feat = model_func.extract_DINOv2_feature(zoom_image.to(device))
+            zoom_mask = model_func.query_cosegmentation(zoom_feat, 
+                                                        x_ref=obj_fps_feats, 
+                                                        ref_mask=obj_fps_masks).sigmoid()
+            y_Remb = model_func.generate_rotation_aware_embedding(zoom_feat, zoom_mask)
+            refer_Remb_vectors.append(y_Remb.squeeze(0)) # 64
+            try:
+                msk_yy, msk_xx = torch.nonzero(zoom_mask.detach().cpu().squeeze().round().type(torch.uint8), as_tuple=True)
+                msk_cx = (msk_xx.max() + msk_xx.min()) / 2
+                msk_cy = (msk_yy.max() + msk_yy.min()) / 2
+            except: # no mask is found
+                msk_cx = CFG.zoom_image_scale / 2
+                msk_cy = CFG.zoom_image_scale / 2
+
+            prob_mask_area = zoom_mask.detach().cpu().sum()
+            bin_mask_area = zoom_mask.round().detach().cpu().sum()            
+            refer_coseg_mask_info.append(torch.tensor([msk_cx, msk_cy, ref_tz, bin_mask_area, prob_mask_area]))
+
+        if save_pred_mask:
+            orig_mask = gs_utils.zoom_out_and_uncrop_image(zoom_mask.squeeze(), # SxS
+                                                            bbox_center=zoom_outp['bbox_center'],
+                                                            bbox_scale=zoom_outp['bbox_scale'],
+                                                            orig_hei=image.shape[0],
+                                                            orig_wid=image.shape[1],
+                                                            )# 1xHxWx1
+            # coseg_mask_path = ref_data['coseg_mask_path']
+            # coseg_mask_path = f"{obj_dataset.ref_output_dir}/{id}" 
+
+            coseg_mask_path = os.path.join(obj_dataset.ref_output_dir,
+                                           id,
+                                           'pred_coseg_mask', 
+                                           '{:06d}.png'.format(idx))
+
+
+            orig_mask = (orig_mask.detach().cpu().squeeze() * 255).numpy().astype(np.uint8) # HxW
+            if not os.path.exists(os.path.dirname(coseg_mask_path)):
+                os.makedirs(os.path.dirname(coseg_mask_path))
+            cv2.imwrite(coseg_mask_path, orig_mask)
+            # 储存一下剪切过的图片看一下
+            if zoom_image.shape[1] == 3:  # 检查是否为 [1, 3, H, W] 格式
+                img_np = zoom_image.squeeze(0).permute(1, 2, 0).cpu().numpy()  # [H, W, 3]
+            else:
+                img_np = zoom_image.squeeze(0).cpu().numpy()  # 单通道 [H, W]
+
+            # 归一化到 [0, 255] 并转为uint8
+            img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+
+            # 保存为文件（确保路径存在）
+            coseg_rgb_path = os.path.join(obj_dataset.ref_output_dir,
+                                id,
+                                'pred_coseg_mask', 
+                                '{:06d}rgb_.png'.format(idx))
+
+            cv2.imwrite(coseg_rgb_path, cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))  # OpenCV需要BGR格式
+
+
+
+        else:
+            refer_pred_masks.append(zoom_mask.detach().cpu().squeeze()) # SxS
+
+        if (idx + 1) % 100 == 0:
+            time_stamp = time.strftime('%d-%H:%M:%S', time.localtime())
+            print('[{}/{}], {}'.format(idx+1, num_instances, time_stamp))
+
+    refer_allo_Rs = torch.stack(refer_allo_Rs, dim=0).squeeze() # Nx3x3
+    refer_Remb_vectors = torch.stack(refer_Remb_vectors, dim=0).squeeze()      # Nx64
+    refer_coseg_mask_info = torch.stack(refer_coseg_mask_info, dim=0).squeeze() # Nx3
+    
+    ref_database = dict()
+    if not save_pred_mask:
+        refer_pred_masks = torch.stack(refer_pred_masks, dim=0).squeeze() # NxSxS
+        ref_database['refer_pred_masks'] = refer_pred_masks
+
+    ref_database['obj_fps_inds'] = fps_inds
+    # ref_database['obj_fps_images'] = zoom_fps_images
+
+    ref_database['obj_fps_feats'] = obj_fps_feats
+    ref_database['obj_fps_masks'] = obj_fps_masks
+    ref_database['obj_fps_dino_tokens'] = obj_fps_dino_tokens 
+
+    ref_database['refer_allo_Rs'] = refer_allo_Rs
+    ref_database['refer_Remb_vectors'] = refer_Remb_vectors
+    ref_database['refer_coseg_mask_info'] = refer_coseg_mask_info
+    
+    return ref_database

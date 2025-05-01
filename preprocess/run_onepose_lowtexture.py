@@ -1,6 +1,6 @@
 import os
 
-# scenes = ['0575-saltbottle-bottle']
+
 data_base_path='/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/lowtexture_test_data_sfm'
 out_base_path='/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/lowtexture_test_data_pgsr'
 imagpath = '/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/lowtexture_test_data'
@@ -8,7 +8,8 @@ imagpath = '/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/lowtexture_test_data
 out_name='test'
 gpu_id=0
 
-scenes = os.listdir(data_base_path)
+# scenes = os.listdir(data_base_path)
+scenes = ['0724-vitamin-others']
 
 cmd = 'conda activate pgsr '
 os.system(cmd)

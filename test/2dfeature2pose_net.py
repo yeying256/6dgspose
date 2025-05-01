@@ -68,8 +68,10 @@ gaussian_PipeP = PipelineParams(parser)
 gaussian_OptimP = OptimizationParams(parser)
 gaussian_BG = torch.zeros((3), device='cuda')
 
-bbox_coords = match_utils.read_txt(boxpath)
+bbox_coords = np.loadtxt(boxpath)
 initin1 = match_utils.read_txt(intrin1path)
+# initin1 = np.loadtxt(intrin1path, dtype=float)
+
 
 
 height, width = img1.shape[:2]
@@ -105,6 +107,7 @@ for camera in cameras:
     #         value = depth_normalized[y, x]
     #         if not np.all(value == 0):  # 如果不是所有通道都为0（假设是多通道图像）
     #             print(f"Position ({x}, {y}): {value}")
+    depth_mask = match_utils.gradient_deep_mask(depth_normalized,TG=3,debug=True)
 
     # depth_image_display = cv2.applyColorMap(cv2.convertScaleAbs(depth_normalized, alpha=255/10), cv2.COLORMAP_JET)
     
@@ -116,8 +119,8 @@ for camera in cameras:
 
     # 沿第三个轴（通道轴）拼接三个通道
     cv2.imshow('Original Depth Image', depth_normalized)
-    cv2.waitKey()  # 按任意键关闭窗口
-    cv2.destroyAllWindows()
+    # cv2.waitKey()  # 按任意键关闭窗口
+    # cv2.destroyAllWindows()
     # cv2.imshow('Colored Depth Image', colored_depth)
 
 

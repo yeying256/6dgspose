@@ -22,6 +22,8 @@ import open3d as o3d
 
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 
 import math
 
@@ -67,6 +69,70 @@ def tensor_to_cv2_image(tensor):
         img = (img * 255).astype(np.uint8)
     
     return img
+
+
+# def visualize_matches_loftr(img1: np.ndarray, img2: np.ndarray, mkpts1: np.ndarray, mkpts2: np.ndarray):
+#         h1, w1 = img1.shape[:2]
+#         h2, w2 = img2.shape[:2]
+#         img_vis = np.zeros((max(h1, h2), w1 + w2, 3), dtype=np.uint8)
+#         if len(img1.shape) == 2:
+#             img_vis[:h1, :w1, :] = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+#         else:
+#             img_vis[:h1, :w1, :] = img1
+#         if len(img2.shape) == 2:
+#             img_vis[:h2, w1:, :] = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
+#         else:
+#             img_vis[:h2, w1:, :] = img2
+
+#         for pt1, pt2 in zip(mkpts1, mkpts2):
+#             pt1_int = tuple(map(int, pt1))
+#             pt2_int = tuple(map(int, pt2))
+#             cv2.circle(img_vis, pt1_int, 2, (0, 255, 0), -1)
+#             cv2.circle(img_vis, (pt2_int[0] + w1, pt2_int[1]), 2, (0, 0, 255), -1)
+#             cv2.line(img_vis, pt1_int, (pt2_int[0] + w1, pt2_int[1]), (0, 255, 0), 1)
+
+#         plt.figure(figsize=(15, 5))
+#         plt.imshow(cv2.cvtColor(img_vis, cv2.COLOR_BGR2RGB))
+#         plt.show()
+
+def visualize_matches_loftr(img1: np.ndarray, img2: np.ndarray, mkpts1: np.ndarray, mkpts2: np.ndarray):
+    # 获取图像的高度和宽度
+    h1, w1 = img1.shape[:2]
+    h2, w2 = img2.shape[:2]
+    
+    # 创建一个空白画布，用于拼接两张图像
+    img_vis = np.zeros((max(h1, h2), w1 + w2, 3), dtype=np.uint8)
+    
+    # 将第一张图像放在画布的左侧
+    if len(img1.shape) == 2:  # 如果是灰度图，转换为彩色图
+        img_vis[:h1, :w1, :] = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+    else:
+        img_vis[:h1, :w1, :] = img1
+    
+    # 将第二张图像放在画布的右侧
+    if len(img2.shape) == 2:  # 如果是灰度图，转换为彩色图
+        img_vis[:h2, w1:, :] = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
+    else:
+        img_vis[:h2, w1:, :] = img2
+    
+    # 绘制匹配点
+    for pt1, pt2 in zip(mkpts1, mkpts2):
+        pt1_int = tuple(map(int, pt1))  # 将点坐标转换为整数
+        pt2_int = tuple(map(int, pt2))
+        
+        # 在第一张图像上绘制绿色点
+        cv2.circle(img_vis, pt1_int, 2, (0, 255, 0), -1)
+        
+        # 在第二张图像上绘制红色点（注意 x 坐标需要加上第一张图像的宽度）
+        cv2.circle(img_vis, (pt2_int[0] + w1, pt2_int[1]), 2, (0, 0, 255), -1)
+        
+        # 绘制连接线
+        cv2.line(img_vis, pt1_int, (pt2_int[0] + w1, pt2_int[1]), (0, 255, 0), 1)
+    
+    # 使用 OpenCV 显示图像
+    cv2.imshow('Matches', img_vis)
+    cv2.waitKey(0)  # 等待用户按键
+    cv2.destroyAllWindows()  # 关闭所有窗口
 
 def draw_matches(image0, image1, points0, points1, matches, output_path=None):
     """
@@ -133,7 +199,7 @@ def rz_torch(theta):
         [0,0,0,1]
     ], dtype=torch.float, device='cuda')
 
-def box2gscamera(width,height,K:np,box:np,camera_num:int = 4):
+def box2gscamera(width,height,K:np,box:np,camera_num:int = 4,debug = False,camera_distance_scale = 1.0):
     '''
     此函数通过box和参数生成多个gs的camera
     K:相机内参矩阵,np数组格式
@@ -142,8 +208,15 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4):
 
     cameras =[]
 
-
-    boxponit = convert_to_3d_points(box)
+    # 假设 box 是一个输入变量
+    if isinstance(box, np.ndarray):  # 检查 box 是否为 NumPy 数组
+        if box.shape == (8, 3):  # 检查 shape 是否为 (8, 3)
+            boxpoint = box
+        else:
+            # 调用 convert_to_3d_points 函数进行转换
+            boxpoint = convert_to_3d_points(box)
+    else:
+        raise TypeError("The input 'box' must be a NumPy array.")
     # 转换成内参矩阵
     K = convert2K(K)
     # item 是转化为标量
@@ -154,12 +227,12 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4):
 
 
     # max_distance返回最远的两个点
-    farthest_pair, max_line = find_farthest_points(boxponit)
+    farthest_pair, max_line = find_farthest_points(boxpoint)
 
     
     # 这里的
 
-    T_init = poses_init(K=K,width=width,height=height,L=max_line)
+    T_init = poses_init(K=K,width=width,height=height,L=max_line*camera_distance_scale)
 
     
     theta = 2 * math.pi / camera_num
@@ -204,6 +277,8 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4):
         transformed_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
         transformed_frame.transform(np.linalg.inv(T_camera))
         # 可视化
+        if debug:
+            o3d.visualization.draw_geometries([original_frame, transformed_frame])
         # o3d.visualization.draw_geometries([original_frame, transformed_frame])
         
         camera = Camera(colmap_id=0,R=T_camera[:3,:3].T,T=T_camera[:3,3],
@@ -225,7 +300,16 @@ def box2gscamera_linemod(width,height,K:np,box:np,camera_num:int = 4):
     cameras =[]
 
 
-    boxponit = convert_to_3d_points(box)
+    # boxponit = convert_to_3d_points(box)
+    # 假设 box 是一个输入变量
+    if isinstance(box, np.ndarray):  # 检查 box 是否为 NumPy 数组
+        if box.shape == (8, 3):  # 检查 shape 是否为 (8, 3)
+            boxpoint = box
+        else:
+            # 调用 convert_to_3d_points 函数进行转换
+            boxpoint = convert_to_3d_points(box)
+    else:
+        raise TypeError("The input 'box' must be a NumPy array.")
     # 转换成内参矩阵
     K = convert2K(K)
     # item 是转化为标量
@@ -236,7 +320,7 @@ def box2gscamera_linemod(width,height,K:np,box:np,camera_num:int = 4):
 
 
     # max_distance返回最远的两个点
-    farthest_pair, max_line = find_farthest_points(boxponit)
+    farthest_pair, max_line = find_farthest_points(boxpoint)
 
     
     # 这里的
@@ -249,7 +333,7 @@ def box2gscamera_linemod(width,height,K:np,box:np,camera_num:int = 4):
     fovx = 2 * np.arctan(width / (2 * fx))
     fovy = 2 * np.arctan(height / (2 * fy))
 
-    for i in range(T_init):
+    for i in range(len(T_init)):
 
         T_camera = T_init[i].cpu().numpy()
 
@@ -293,15 +377,22 @@ def convert_to_3d_points(bbox_coords):
         raise ValueError("bbox_coords 应该包含24个元素")
     
     points = [bbox_coords[i:i+3] for i in range(0, len(bbox_coords), 3)]
-    return points
+    return np.array(points)
 def convert2K(K_array):
     '''
     返回torch类型的矩阵
     '''
     
-    if len(K_array) != 9:
-        raise ValueError("bbox_coords 应该包含9个元素")
+    # 如果 K_array 是一个 3x3 的 NumPy 数组
+    if isinstance(K_array, np.ndarray) and K_array.shape == (3, 3):
+        # 直接转换为 torch.Tensor 并返回
+        return torch.tensor(K_array, dtype=torch.float, device='cuda')
     
+    # 如果 K_array 是一个长度为 9 的一维数组或列表
+    if len(K_array) != 9:
+        raise ValueError("K_array 应该包含9个元素")
+    
+    # 将一维数组转换为 3x3 的矩阵
     K = [K_array[i:i+3] for i in range(0, len(K_array), 3)]
     K_tensor = torch.tensor(K, dtype=torch.float, device='cuda')
     return K_tensor
@@ -390,7 +481,7 @@ def T_rot_axis(theta , axis = 'z',return_torch=True,is_cuda = True):
     T_rot[:3, :3] = R
 
     if return_torch == True:
-        T_rot = torch.from_numpy(T_rot, dtype=torch.float32)
+        T_rot = torch.from_numpy(T_rot)
 
         if is_cuda == True:
             T_rot = T_rot.cuda()
@@ -427,7 +518,7 @@ def poses_init_lists(K:torch.tensor,width,height,L,init_num=6):
     T_init_list = []
     for i in range(init_num):
 
-        T_init = torch.eye(4,dtype=torch.float32, device='cuda')
+        T_init = torch.eye(4,dtype=torch.float64, device='cuda')
         T_init[2,3] = min_distance
         T_init[0,3] = -(min_distance *width/2 -cx*min_distance)/fx
         T_init[1,3] = -(min_distance *height/2 -cy*min_distance)/fy
@@ -527,7 +618,10 @@ def match2xy_xyz(kporg,kpdeep,img_deep:np.ndarray,matchs:List[cv2.DMatch],camera
     pass
 
 
-def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
+def match2xy_xyz_LightGlue(kporg,
+                           kpdeep,
+                           img_deep:np.ndarray,
+                           camera:Camera):
     '''
     img_deep[w,h,1] 单位为m 深度图
     matchs 匹配信息
@@ -588,7 +682,7 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
         Z_c = z
 
         # 将相机坐标转换为世界坐标系下的3D坐标
-        camera_coords = np.array([X_c, Y_c, Z_c,[1]]).reshape(4, 1)
+        camera_coords = np.array([X_c, Y_c, Z_c,1]).reshape(4, 1)
         world_coords = T_inv @ camera_coords
 
         world_coords = world_coords[:3,0]
@@ -614,3 +708,91 @@ def match2xy_xyz_LightGlue(kporg,kpdeep,img_deep:np.ndarray,camera:Camera):
 
     return xy_org,xyz_gs
     pass
+
+
+
+def gradient_deep_mask(rander_deep:np.ndarray,
+                       ksize = 3,
+                       TG = 50,
+                        debug=False):
+    '''
+    ksize: 梯度核的大小, 默认为3。
+    TG: Thresholded Gradient: 梯度阈值化，用于提取深度图中的边缘。
+    '''
+        
+    # 1. 计算深度图的梯度
+    gradient_x = cv2.Sobel(rander_deep, cv2.CV_64F, 1, 0, ksize=ksize)
+    gradient_y = cv2.Sobel(rander_deep, cv2.CV_64F, 0, 1, ksize=ksize)
+    gradient_magnitude = np.sqrt(gradient_x**2 + gradient_y**2)
+
+    # 归一化梯度幅值
+    gradient_magnitude = cv2.normalize(gradient_magnitude, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+
+    # 2. 阈值化梯度幅值，得到边缘掩码
+    _, depth_edges = cv2.threshold(gradient_magnitude, TG, 255, cv2.THRESH_BINARY)
+
+    # 显示深度边缘
+    if debug:
+        cv2.imshow('Depth Edges', depth_edges)
+        # cv2.waitKey(0)
+
+    return depth_edges
+
+    pass
+
+
+def crop_and_tile_mask(image, mask, K,debug = False):
+    """
+    将mask区域裁剪并平铺到整个图像中，并更新相机的内参矩阵 K。
+
+    参数:
+    - image: OpenCV读取的原始图像（BGR格式）
+    - mask: OpenCV读取的mask图像（单通道灰度图）
+    - K: 相机的内参矩阵 (3x3)
+
+    返回:
+    - result_image: 处理后的图像
+    - new_K: 更新后的内参矩阵
+    """
+    # 检查输入是否有效
+    if image is None or mask is None:
+        raise ValueError("输入的图像或mask为空，请检查数据是否正确。")
+    if K.shape != (3, 3):
+        raise ValueError("K 矩阵必须是 3x3 的矩阵。")
+
+    # 将mask转换为三通道，以便与图像进行按位与操作
+    mask = cv2.merge([mask, mask, mask])
+
+    # 应用mask
+    masked_image = cv2.bitwise_and(image, mask)
+
+    # 找到mask的边界框
+    coords = cv2.findNonZero(mask[:, :, 0])  # 使用mask的第一个通道
+    x, y, w, h = cv2.boundingRect(coords)
+
+    # 裁剪图像
+    cropped_image = masked_image[y:y+h, x:x+w]
+
+    # 获取原始图像的大小
+    original_height, original_width = image.shape[:2]
+
+    # 将裁剪后的图像缩放到原始图像的大小
+    resized_cropped_image = cv2.resize(cropped_image, (original_width, original_height))
+
+    # 将缩放后的图像平铺到整个图像中
+    result_image = resized_cropped_image
+
+    # 更新 K 矩阵
+    # 新的主点坐标需要根据裁剪区域调整
+    new_K = K.copy()
+    new_K[0, 2] -= x  # 更新 cx
+    new_K[1, 2] -= y  # 更新 cy
+
+    # 显示结果
+    if debug:
+        cv2.imshow('Result Image', result_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+
+    return result_image, new_K

@@ -32,6 +32,18 @@ match:
   use_pose_refine: True
 
 
+refine:
+  START_LR : 8.0e-4
+  MAX_STEPS : 1000
+  END_LR : 1.0e-7
+  WARMUP : 10
+  USE_SSIM : True
+  USE_MS_SSIM : True
+  EARLY_STOP_MIN_STEPS : 10
+  EARLY_STOP_LOSS_GRAD_NORM : 5.0e-7
+
+camera_gap: 5
+
 metric_out_dir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/train_data_pgsr/metric_out.txt"
 
 

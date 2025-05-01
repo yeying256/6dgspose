@@ -9,6 +9,8 @@ import logging
 from typing import Dict, List
 import cv2
 
+from types import SimpleNamespace
+
 # 这个是需要将python的路径给到根目录，要不然找不到路径
 dir_path = Path(os.path.dirname(os.path.realpath(__file__))).parents[0]
 print(f"dir_path {dir_path}")
@@ -28,11 +30,18 @@ class dataset_base:
         # 所有的位姿路径
         self.pose_dir_lists:Dict[str, List[str]]  = {}
         self.pose_lists:Dict[str,List[np.ndarray]] = {}
+        self.allo_pose_lists:Dict[str,List[np.ndarray]] = {}
         # 3dgs的
         self.gs_model_dir_lists:Dict[str, List[str]] = {}
         # box边界
         self.box_dir_lists:Dict[str,str] = {}
         self.box:Dict[str,np.ndarray] = {}
+
+        # 参考的内参和外参,这个是用来生成参考的
+        self.ref_K:Dict[str,List[np.ndarray]] = {}
+        self.ref_T:Dict[str,List[np.ndarray]] = {}
+
+        self.ref_dir:str = '' 
 
         # 3dgs的直径
         self.diameter:Dict[str,float] ={}
@@ -51,6 +60,26 @@ class dataset_base:
         self.maskforder_dir = ""
         
         self.debug = False
+        self.camera_distance_scale = 1.0
+
+        self.refine_CFG = SimpleNamespace(
+                # 初始学习率
+                START_LR=8e-4,
+                # 最大步数
+                MAX_STEPS=1000,
+                END_LR=1e-6,
+                WARMUP=10,
+                USE_SSIM=True,
+                USE_MS_SSIM=True,
+                EARLY_STOP_MIN_STEPS=10,
+                EARLY_STOP_LOSS_GRAD_NORM=5e-6
+                )
+        
+        self.gspose_model_path = ""
+        
+        self.camera_gap = 10
+
+        self.debug_target = None
         pass
 
     def get_imag(self,imag_dir:str):

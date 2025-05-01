@@ -90,7 +90,12 @@ class GS_refine:
         self.gaussian_OptimP = OptimizationParams(self.parser)
         self.gaussian_BG = torch.zeros((3), device=self.device)
 
-    def GS_Refiner(self,image:torch.Tensor , mask:torch.Tensor , init_camera:Camera, gaussians:GaussianModel, return_loss=False):
+    def GS_Refiner(self,image:torch.Tensor , 
+                   mask:torch.Tensor , 
+                   init_camera:Camera, 
+                   gaussians:GaussianModel, 
+                   return_loss=False,
+                   debug=False):
         if image.dim() == 4:
             image = image.squeeze(0)
         if image.shape[2] == 3:
@@ -145,6 +150,8 @@ class GS_refine:
             # GS_Renderer是渲染器
             render_img = GS_Renderer(init_camera, gaussians, self.gaussian_PipeP, self.gaussian_BG)['render'] * trunc_mask
             # show_gs_img(render_img)
+            if debug:
+                show_gs_img(render_img/2+target_img/2)
             # show_gs_img(render_img/2+target_img/2)
             # show_gs_img(target_img)
             loss = 0.0

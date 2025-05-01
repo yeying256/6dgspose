@@ -9,7 +9,7 @@ out_name='test'
 gpu_id=0
 
 
-scenes = ['0551-milk-others']
+scenes = ['0408-colorbox-box']
 # scenes = os.listdir(data_base_path)
 
 cmd = 'conda activate pgsr '

@@ -1,13 +1,15 @@
 data:
   dataname: "linemod"
   # 这个是数据集的位置，下一级的数据是需要使用代码搜索的
-  dataset_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_train/train"
+  dataset_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_test_all/test"
+  # 第二个版本中需要一些训练集的数据
+  data_ref_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_train/train"
   # 因为每个onepose的数据集下面有几个subdir，名字后面加上 -1 -2等
   subdir: ""
   # 这个是每一个子数据下面的照片的路径
   color: "rgb"
   # 每一个3dgs的
-  gsdir: "/media/wangxiao/Newsmy/dataset_LINEMOD/datasets/linemod_pgsr"
+  gsdir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr"
   gs_subdir: "test/point_cloud/iteration_30000/point_cloud.ply"
 
   colmap_path: "/media/wangxiao/Newsmy/linemod/linemod_train_sfm"
@@ -23,13 +25,14 @@ data:
   clip: True
 
   no_target_name_lists: 
-    - ""
-  # 参考数据集跟这个本身就是一个，所以这里是一样的
-  data_ref_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_train/train"
+    - "000003"
+# 是否图形化调试
 
-ref_output_dir: "/media/wangxiao/Newsmy/linemod/reference_database/LINEMOD/LM_database_probmask"
 
-debug: False
+
+# loftr
+debug: True
+camera_distance_scale: 2.0
 match:
   extractor:
     name: "SuperPoint"
@@ -37,31 +40,33 @@ match:
   matcher: 
     name: "LightGlue"
     features: "superpoint"
-  confidence_threshold: 0.90
+  confidence_threshold: 0.40
 
   camera_num: 10
   pnp_reprojection_error: 5
   use_pose_refine: True
 
+# 优化参数
 refine:
-  START_LR : 8.0e-4
+  START_LR : 8e-4
   MAX_STEPS : 1000
-  END_LR : 1.0e-7
+  END_LR : 1e-7
   WARMUP : 10
   USE_SSIM : True
   USE_MS_SSIM : True
   EARLY_STOP_MIN_STEPS : 10
-  EARLY_STOP_LOSS_GRAD_NORM : 5.0e-7
+  EARLY_STOP_LOSS_GRAD_NORM : 5e-7
 
 
-metric_out_dir: ""
-camera_distance_scale: 2.0
+
+# metric_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr/metric_out.txt"
+
+
 gspose_model_path: "/home/wangxiao/6d_pose_learn/src/myproject/gspose_model/model_weights.pth"
+
 metric_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr/metric_out.txt"
 
 log_dir: "/media/wangxiao/Newsmy/linemod/log"
-
-
 
 
 

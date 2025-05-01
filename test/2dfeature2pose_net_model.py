@@ -87,7 +87,7 @@ for camera in cameras:
     # depth_normalized = cv2.normalize(deepsimg.permute(1, 2, 0).detach().cpu().numpy(), None, 0, 255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     depth_normalized = deepsimg.permute(1, 2, 0).detach().cpu().numpy()
 
-    
+    match_utils.gradient_deep_mask(depth_normalized,debug=True)
 
 
     # 沿第三个轴（通道轴）拼接三个通道

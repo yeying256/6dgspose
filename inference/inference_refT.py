@@ -49,14 +49,22 @@ def main(config_file:str):
     for object in tqdm(dataset.dataset.object_lists, desc="Processing objects"):
         # 进入到了object
 
+        if dataset.dataset.debug_target is not None:
+            if object not in dataset.dataset.debug_target:
+                continue
 
-        metrics,init_metric = pose_match2d3d.pose_estimate_batch(GS_model_dir = dataset.dataset.gs_model_dir_lists[object],
+
+        # metrics,init_metric = pose_match2d3d.pose_estimate_batch(GS_model_dir = dataset.dataset.gs_model_dir_lists[object],
+        #                                     bbox_coords = dataset.dataset.box_dir_lists[object],
+        #                                     initin1 = dataset.dataset.cam_intr_dir_lists[object],
+        #                                     img_target_dir = dataset.dataset.color_dir_lists[object],
+        #                                     object_name=object,dataset=dataset)
+        
+        metrics,init_metric = pose_match2d3d.pose_estimate_batch2(GS_model_dir = dataset.dataset.gs_model_dir_lists[object],
                                             bbox_coords = dataset.dataset.box_dir_lists[object],
                                             initin1 = dataset.dataset.cam_intr_dir_lists[object],
                                             img_target_dir = dataset.dataset.color_dir_lists[object],
                                             object_name=object,dataset=dataset)
-        
-        
 
         # 拼接字典
         refine_metrics = {key: refine_metrics.get(key, []) + metrics.get(key, []) for key in set(refine_metrics) | set(metrics)}

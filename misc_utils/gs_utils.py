@@ -376,8 +376,10 @@ def draw_3d_bounding_box(rgb_image, projected_bbox, color, linewidth=3):
     return image_with_bbox
 
 
+
 def egocentric_to_allocentric(ego_pose, cam_ray=(0, 0, 1.0)):
     # Compute rotation between ray to object centroid and optical center ray
+    # 以自我为中心（egocentric）的相机位姿转换为以目标物体为中心（allocentric）的位姿
     cam_ray = np.asarray(cam_ray)
     assert(ego_pose.shape[-1] == 4), "ego_pose should be a 3x4 or 4x4 matrix"
     trans = ego_pose[:3, 3]
@@ -395,10 +397,12 @@ def egocentric_to_allocentric(ego_pose, cam_ray=(0, 0, 1.0)):
 
 def allocentric_to_egocentric(allo_pose, cam_ray=(0, 0, 1.0)):
     # Compute rotation between ray to object centroid and optical center ray
+    # 从目标看相机的坐标，转换到->相机看目标
     cam_ray = np.asarray(cam_ray)
     assert(allo_pose.shape[-1] == 4), "allo_pose should be a 3x4 or 4x4 matrix"
 
     trans = allo_pose[:3, 3]
+    # 提取移动向量
     obj_ray = trans.copy() / np.linalg.norm(trans)
     angle = math.acos(cam_ray.dot(obj_ray))
     if angle > 0:
