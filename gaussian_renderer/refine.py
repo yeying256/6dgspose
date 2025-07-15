@@ -116,12 +116,12 @@ class GS_refine:
 
         gaussians.initialize_pose()
         params = [gaussians._delta_R, gaussians._delta_T]
-        optimizer = torch.optim.AdamW(params, lr=self.CFG.START_LR)
+        optimizer = torch.optim.AdamW(params, lr= float(self.CFG.START_LR))
 
-        lr_scheduler = CosineAnnealingWarmupRestarts(optimizer, self.CFG.MAX_STEPS,
-                                                    warmup_steps=self.CFG.WARMUP, 
-                                                    max_lr=self.CFG.START_LR, 
-                                                    min_lr=self.CFG.END_LR)
+        lr_scheduler = CosineAnnealingWarmupRestarts(optimizer, int( self.CFG.MAX_STEPS),
+                                                    warmup_steps= int(self.CFG.WARMUP), 
+                                                    max_lr= float( self.CFG.START_LR), 
+                                                    min_lr= float(self.CFG.END_LR))
         trunc_mask = (image.sum(dim=0, keepdim=True) > 0).type(torch.float32) # 1xSxS        
         target_img = (image * mask.float().to(self.device)).to(self.device)
         target_img = target_img/255

@@ -29,43 +29,48 @@ data:
   clip: True
 
   no_target_name_lists: 
+    - "000001"
+    - "000002"
+
+
     - "000003"
     - "000007"
 # 是否图形化调试
 
 ref_output_dir: "/media/wangxiao/Newsmy/linemod/reference_database/LINEMOD/LM_database_probmask"
 
-# loftr
-debug: False
+debug: True
 camera_distance_scale: 2.0
-match:
-  extractor:                  
-    name: "loftr"
-    max_num_keypoints: 2048
-  matcher: 
-    name: "loftr"
-    # features: "superpoint"
-  confidence_threshold: 0.40
+# loftr
 
-  camera_num: 10
-  pnp_reprojection_error: 5
-  use_pose_refine: True
-
-
-
-# 记录一些过程数据，方便调试
 # match:
-#   extractor:
-#     name: "SuperPoint"
+#   extractor:                  
+#     name: "loftr"
 #     max_num_keypoints: 2048
 #   matcher: 
-#     name: "LightGlue"
-#     features: "superpoint"
-#   confidence_threshold: 0.90
+#     name: "loftr"
+#     # features: "superpoint"
+#   confidence_threshold: 0.40
 
 #   camera_num: 10
 #   pnp_reprojection_error: 5
 #   use_pose_refine: True
+
+
+
+# 记录一些过程数据，方便调试
+match:
+  extractor:
+    name: "SuperPoint"
+    max_num_keypoints: 2048
+  matcher: 
+    name: "LightGlue"
+    features: "superpoint"
+  confidence_threshold: 0.90
+
+  camera_num: 10
+  pnp_reprojection_error: 5
+  use_pose_refine: True
 
 # 优化参数
 refine:

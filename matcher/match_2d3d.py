@@ -55,6 +55,9 @@ from tqdm import tqdm
 
 from configs import inference_cfg as CFG
 
+
+from misc_utils import draw_bbox
+
 def visualize_point_cloud_with_coordinate(points, camera_pose=None):
     # 创建Open3D点云对象
     pcd = o3d.geometry.PointCloud()
@@ -451,11 +454,13 @@ class match_2d3d():
             valid_mask = mask_tensor[points0[:, 1].long(), points0[:, 0].long()] == 1
             points0 = points0[valid_mask]
             points1 = points1[valid_mask]
+            matches = matches[valid_mask]  # 新增：同时过滤 matches
             filtered_scores = filtered_scores[valid_mask]
 
 
         if debug:
             match_utils.draw_matches(torch_render, img_rgb, points0, points1, matches)
+            match_utils.draw_matches_with_depth(depth_np,torch_render, img_rgb, points0, points1, matches)
         # match_utils.draw_matches(torch_render, img_rgb, points0, points1, matches)
 
         img_xy = []
@@ -523,12 +528,15 @@ class match_2d3d():
             filtered_scores = filtered_scores[valid_mask]
 
         # 0是target 1是render
-
-        if debug:
-            match_utils.visualize_matches_loftr(img_rgb, render_img_np, mkpts0, mkpts1)
-
-
+            
         depth_np = rander_deep.permute(1, 2, 0).detach().cpu().numpy().squeeze()
+        if debug:
+
+            # match_utils.draw_matches(img_render_tensor, img_rgb, points0, points1, matches)
+            # match_utils.draw_matches_with_depth(depth_np,torch_render, img_rgb, points0, points1, matches)
+            match_utils.visualize_matches_loftr(img_rgb, render_img_np, mkpts0, mkpts1,depth_img=depth_np)
+
+
                            
         if debug == True:
             y_indices, x_indices = np.nonzero(depth_np)
@@ -707,7 +715,8 @@ class match_2d3d():
         img_xys,gs_xyz_ws = self.camera_matchs(cameras= cameras,
                                                GS_model= GS_model,
                                                img_target=img_target,
-                                               debug=debug)
+                                               debug=debug,
+                                               match=self.match_name)
 
         dist_coeffs = np.zeros(shape=[8, 1], dtype="float64")
         T_ = np.eye(4)
@@ -717,6 +726,10 @@ class match_2d3d():
                     reprojectionError=self.pnp_reprojection_error,
                     iterationsCount=10000,
                     flags=cv2.SOLVEPNP_EPNP)
+            
+            if np.all(tvec > 100):
+            # 如果是，将 tvec 设置为零向量
+                tvec = np.zeros_like(tvec)
             # 1. 将旋转向量 rvec 转换为旋转矩阵 R
             R_, _ = cv2.Rodrigues(rvec)
 
@@ -767,7 +780,7 @@ class match_2d3d():
             # cv2.destroyAllWindows()
 
 
-            class_gsrefine = GS_refine(refine_cfg)
+            class_gsrefine = GS_refine()
 
 
             imag0_rgb = cv2.cvtColor(img_target, cv2.COLOR_BGR2RGB)
@@ -911,6 +924,12 @@ class match_2d3d():
         
         camera_ref =  self.camera_ref_gen(dataset,object_name)
 
+
+        # 记录pose
+        # 创建这个文件夹
+        pose_out_dir_temp = f"{dataset.dataset.pose_out_dir}/{object_name}"
+        os.makedirs(pose_out_dir_temp, exist_ok=True)
+
         for i in tqdm(range(0,len(img_target_dir)),desc="Processing images"):
             img_target = cv2.imread(img_target_dir[i])
             initin_np = match_utils.read_txt(initin1[i])
@@ -923,13 +942,91 @@ class match_2d3d():
                                             camera_ref=camera_ref,
                                             refine_cfg=dataset.dataset.refine_CFG,
                                             debug=dataset.dataset.debug)
-            # 每次优化完参数之后就要清空一下，要不然就会叠加上一次的数据
+            
             GS_model.initialize_pose()
 
             camK = match_utils.convert2K(initin_np)
             # 读取数据集pose
             pose_data = match_utils.read_txt(dataset.dataset.pose_dir_lists[object_name][i])
             pose_data_np = np.array(pose_data).reshape(4, 4)
+
+            # pose_out_dir_temp
+            name = os.path.splitext(os.path.basename(img_target_dir[i]))[0]
+
+            # 这个路径是到每张照片的输出文件夹
+            pose_dir = f"{pose_out_dir_temp}/{name}"
+
+            os.makedirs(pose_dir, exist_ok=True)
+
+            pose_init_dir = f"{pose_dir}/pose_init.txt"
+            pose_refine_dir = f"{pose_dir}/pose_refine.txt"
+
+
+            # 所有文件路径
+            pose_files = [pose_init_dir, pose_refine_dir]
+
+            # 删除已存在的文件
+            for file_path in pose_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
+            # 创建新的空文件
+            for file_path in pose_files:
+                with open(file_path, 'w') as f:
+                    pass  # 创建空文件即可
+
+
+            with open(pose_init_dir, 'w') as f:
+                    # init_T
+                    np.savetxt(f, init_T, fmt='%.6f', delimiter=' ')
+                    pass  # 创建空文件即可
+            
+            with open(pose_refine_dir, 'w') as f:
+                    # init_T
+                    np.savetxt(f, T_p, fmt='%.6f', delimiter=' ')
+                    pass  # 创建空文件即可
+            
+            
+            # traget image 的np表示 w,h,c
+            rgb_np = cv2.cvtColor(img_target, cv2.COLOR_RGB2BGR)
+
+            if rgb_np.dtype != np.uint8:
+                if rgb_np.max() <= 1.0:
+                    rgb_np = (rgb_np * 255).astype(np.uint8)
+                else:
+                    rgb_np = rgb_np.astype(np.uint8)
+
+
+            rgb_np = cv2.cvtColor(rgb_np, cv2.COLOR_BGR2RGB)
+
+
+
+            img_init_dir = f"{pose_dir}/pose_init.png"
+            img_refine_dir = f"{pose_dir}/pose_refine.png"
+
+            camK_np = camK.cpu().numpy().copy()
+            initpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,init_T,bbox_points_np,camK_np,rgb_np)
+            refinpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,T_p,bbox_points_np,camK_np,rgb_np)
+
+            # 保存图像，若文件已存在则覆盖
+            cv2.imwrite(img_init_dir, initpose_rgb_show)
+            cv2.imwrite(img_refine_dir, refinpose_rgb_show)
+
+
+
+            # cv2.imshow('Rendered Bboxes', initpose_rgb_show)
+            # 等待任意键按下后关闭窗口
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
+            
+
+
+
+
+
+
+            # 每次优化完参数之后就要清空一下，要不然就会叠加上一次的数据
+
             
             # 初始的位姿
             init_add = metric_utils.calc_add_metric(GS_model._xyz.detach().cpu().numpy(), dataset.dataset.diameter[object_name],init_T,pose_data_np)
@@ -1100,6 +1197,13 @@ class match_2d3d():
                    "t_errs":[]}
         gspose_metric = {"R_errs":[],
                    "t_errs":[]}
+        
+
+        # 记录pose
+        # 创建这个文件夹
+        pose_out_dir_temp = f"{dataset.dataset.pose_out_dir}/{object_name}"
+        os.makedirs(pose_out_dir_temp, exist_ok=True)
+
         
         # camera_ref =  self.camera_ref_gen_linemod(dataset,object_name)
         # 进入每个照片
@@ -1305,7 +1409,6 @@ class match_2d3d():
             masked_rgb_np = masked_rgb.permute(1, 2, 0).numpy()  # (s, s, 3)
             masked_rgb_np = (masked_rgb_np * 255).astype(np.uint8)[:, :, ::-1]   # 0-255 范围，保持 RGB
 
-
                 
 
             
@@ -1332,6 +1435,85 @@ class match_2d3d():
             print(f"T refin = {T_p}")
 
             print(f"file = {img_target_dir[i]}")
+
+
+            # pose_out_dir_temp
+            name = os.path.splitext(os.path.basename(img_target_dir[i]))[0]
+
+            # 这个路径是到每张照片的输出文件夹
+            pose_dir = f"{pose_out_dir_temp}/{name}"
+
+            os.makedirs(pose_dir, exist_ok=True)
+
+            pose_init_dir = f"{pose_dir}/pose_init.txt"
+            pose_refine_dir = f"{pose_dir}/pose_refine.txt"
+            pose_gspose_dir = f"{pose_dir}/pose_gspose.txt"
+
+
+            # 所有文件路径
+            pose_files = [pose_init_dir, pose_refine_dir, pose_gspose_dir]
+
+            # 删除已存在的文件
+            for file_path in pose_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
+            # 创建新的空文件
+            for file_path in pose_files:
+                with open(file_path, 'w') as f:
+                    pass  # 创建空文件即可
+
+
+            with open(pose_init_dir, 'w') as f:
+                    # init_T
+                    np.savetxt(f, init_T, fmt='%.6f', delimiter=' ')
+                    pass  # 创建空文件即可
+            
+            with open(pose_refine_dir, 'w') as f:
+                    # init_T
+                    np.savetxt(f, T_p, fmt='%.6f', delimiter=' ')
+                    pass  # 创建空文件即可
+            
+            with open(pose_gspose_dir, 'w') as f:
+                    # init_T
+                    np.savetxt(f, linemod_init, fmt='%.6f', delimiter=' ')
+                    pass  # 创建空文件即可
+            
+            # traget image 的np表示 w,h,c
+            rgb_np = rgb_image.permute(1, 2, 0).numpy()
+
+            if rgb_np.dtype != np.uint8:
+                if rgb_np.max() <= 1.0:
+                    rgb_np = (rgb_np * 255).astype(np.uint8)
+                else:
+                    rgb_np = rgb_np.astype(np.uint8)
+
+
+            rgb_np = cv2.cvtColor(rgb_np, cv2.COLOR_BGR2RGB)
+
+
+
+            img_init_dir = f"{pose_dir}/pose_init.png"
+            img_refine_dir = f"{pose_dir}/pose_refine.png"
+            img_gspose_dir = f"{pose_dir}/pose_gspose.png"
+
+            initpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,init_T,box,K_crop,rgb_np)
+            gspose_rgb_show = draw_bbox.render_bboxes(pose_data_np,linemod_init,box,K_crop,rgb_np)
+            refinpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,T_p,box,K_crop,rgb_np)
+
+            # 保存图像，若文件已存在则覆盖
+            cv2.imwrite(img_init_dir, initpose_rgb_show)
+            cv2.imwrite(img_refine_dir, refinpose_rgb_show)
+            cv2.imwrite(img_gspose_dir, gspose_rgb_show)
+
+
+
+            # cv2.imshow('Rendered Bboxes', initpose_rgb_show)
+            # 等待任意键按下后关闭窗口
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
+            
+
 
 
 
@@ -1540,17 +1722,28 @@ class match_2d3d():
             # 如果ref估计的位置跟差的太远
             # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+
+            # if d_trans>0.08:
+            #     T_ = T_init_ref.copy()
+            #     camera = cameras[0]
+            # else:
+            #     camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
+            #                     FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
+            #                     image_name='',image_path='',uid=0,preload_img=False)
             
-            if d_trans>0.08:
-                camera = cameras[0]
-            else:
-                camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
-                                FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
-                                image_name='',image_path='',uid=0,preload_img=False)
+            # if d_trans>0.08:
+            T_ = T_init_ref.copy()
+            camera = cameras[0]
+            # else:
+            #     camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
+            #                     FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
+            #                     image_name='',image_path='',uid=0,preload_img=False)
 
             # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
             render_init = GS_Renderer(camera, GS_model, self.gaussian_PipeP, self.gaussian_BG)
+            # render_init = GS_Renderer(cameras[0], GS_model, self.gaussian_PipeP, self.gaussian_BG)
+
 
             render_init_img = render_init['render']
 

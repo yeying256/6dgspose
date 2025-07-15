@@ -217,14 +217,20 @@ def onepose_to_json(args):
             continue
         # 进入到二级文件夹
         sub_lists = os.listdir(scene_path)
-        for sub_list in sub_lists:
-            # 只取第一个数据集
-            if '-1' in sub_list:
-                # 获取这个数据集的路径
-                subpath = os.path.join(scene_path,sub_list)
-                break
+
+        subdirs_with_minus = [subdir for subdir in sub_lists if '-' in subdir]
+        # for sub_list in sub_lists:
+        #     # 只取第一个数据集
+        #     if '-1' in sub_list:
+        #         # 获取这个数据集的路径
+        #         subpath = os.path.join(scene_path,sub_list)
+        #         break
         # for end
-            
+        sub_list = subdirs_with_minus[-1:]
+
+        subpath = os.path.join(scene_path,sub_list[0])
+
+
         # 构建路径
         color_dir = os.path.join(subpath, 'color')
         db_file = os.path.join(f"{sfm_output_path}/{scene}", 'database.db')

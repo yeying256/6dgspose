@@ -53,6 +53,11 @@ class onepose_dataset(dataset_base):
             )
         
         try:
+            self.pose_out_dir = config['pose_out_dir']
+        except:
+            self.pose_out_dir = None
+        
+        try:
             self.debug_target = config['data']['debug_target']
         except:
             self.debug_target = None
@@ -92,6 +97,30 @@ class onepose_dataset(dataset_base):
                         txt_name = os.path.splitext(imag)[0] + '.txt'
                         self.cam_intr_dir_lists[object_name].append(os.path.join(cam_intr_dir,txt_name))
                         self.pose_dir_lists[object_name].append(os.path.join(pose_dir,txt_name))
+
+                pass
+            elif subdir == '--1':
+                sub_name = subdirs_with_minus[-1:]
+
+                temp_subdir = os.path.join(temp_dir,sub_name[0])
+                    # 查找所有的图片
+                color_forder_dir = os.path.join(temp_subdir,color_forder_name)
+                imags= os.listdir(color_forder_dir)
+                # 查找所有的内参
+                cam_intr_dir = os.path.join(temp_subdir,intrinsics_forder_name)
+
+                pose_dir = os.path.join(temp_subdir,self.pose_forder_name)
+                
+
+                for imag in imags:
+                    # 遍历所有的图片
+                    if not os.path.splitext(imag)[1] == '.png' and not os.path.splitext(imag)[1] == '.jpg':
+                        continue
+                    self.color_dir_lists.setdefault(object_name,[]).append(os.path.join(color_forder_dir,imag))
+                    txt_name = os.path.splitext(imag)[0] + '.txt'
+                    self.cam_intr_dir_lists.setdefault(object_name,[]).append(os.path.join(cam_intr_dir,txt_name))
+                    self.pose_dir_lists.setdefault(object_name,[]).append(os.path.join(pose_dir,txt_name))
+
 
                 pass
             else:

@@ -95,44 +95,100 @@ def tensor_to_cv2_image(tensor):
 #         plt.imshow(cv2.cvtColor(img_vis, cv2.COLOR_BGR2RGB))
 #         plt.show()
 
-def visualize_matches_loftr(img1: np.ndarray, img2: np.ndarray, mkpts1: np.ndarray, mkpts2: np.ndarray):
-    # 获取图像的高度和宽度
-    h1, w1 = img1.shape[:2]
-    h2, w2 = img2.shape[:2]
+# def visualize_matches_loftr(img1: np.ndarray, img2: np.ndarray, mkpts1: np.ndarray, mkpts2: np.ndarray,deep_img:np.ndarray):
+#     # 获取图像的高度和宽度
+#     h1, w1 = img1.shape[:2]
+#     h2, w2 = img2.shape[:2]
     
-    # 创建一个空白画布，用于拼接两张图像
-    img_vis = np.zeros((max(h1, h2), w1 + w2, 3), dtype=np.uint8)
+#     # 创建一个空白画布，用于拼接两张图像
+#     img_vis = np.zeros((max(h1, h2), w1 + w2, 3), dtype=np.uint8)
     
-    # 将第一张图像放在画布的左侧
-    if len(img1.shape) == 2:  # 如果是灰度图，转换为彩色图
-        img_vis[:h1, :w1, :] = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
-    else:
-        img_vis[:h1, :w1, :] = img1
+#     # 将第一张图像放在画布的左侧
+#     if len(img1.shape) == 2:  # 如果是灰度图，转换为彩色图
+#         img_vis[:h1, :w1, :] = cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+#     else:
+#         img_vis[:h1, :w1, :] = img1
     
-    # 将第二张图像放在画布的右侧
-    if len(img2.shape) == 2:  # 如果是灰度图，转换为彩色图
-        img_vis[:h2, w1:, :] = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
-    else:
-        img_vis[:h2, w1:, :] = img2
+#     # 将第二张图像放在画布的右侧
+#     if len(img2.shape) == 2:  # 如果是灰度图，转换为彩色图
+#         img_vis[:h2, w1:, :] = cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
+#     else:
+#         img_vis[:h2, w1:, :] = img2
     
-    # 绘制匹配点
-    for pt1, pt2 in zip(mkpts1, mkpts2):
-        pt1_int = tuple(map(int, pt1))  # 将点坐标转换为整数
-        pt2_int = tuple(map(int, pt2))
+#     # 绘制匹配点
+#     for pt1, pt2 in zip(mkpts1, mkpts2):
+#         pt1_int = tuple(map(int, pt1))  # 将点坐标转换为整数
+#         pt2_int = tuple(map(int, pt2))
         
-        # 在第一张图像上绘制绿色点
-        cv2.circle(img_vis, pt1_int, 2, (0, 255, 0), -1)
+#         # 在第一张图像上绘制绿色点
+#         cv2.circle(img_vis, pt1_int, 2, (0, 255, 0), -1)
         
-        # 在第二张图像上绘制红色点（注意 x 坐标需要加上第一张图像的宽度）
-        cv2.circle(img_vis, (pt2_int[0] + w1, pt2_int[1]), 2, (0, 0, 255), -1)
+#         # 在第二张图像上绘制红色点（注意 x 坐标需要加上第一张图像的宽度）
+#         cv2.circle(img_vis, (pt2_int[0] + w1, pt2_int[1]), 2, (0, 0, 255), -1)
         
-        # 绘制连接线
-        cv2.line(img_vis, pt1_int, (pt2_int[0] + w1, pt2_int[1]), (0, 255, 0), 1)
+#         # 绘制连接线
+#         cv2.line(img_vis, pt1_int, (pt2_int[0] + w1, pt2_int[1]), (0, 255, 0), 1)
     
-    # 使用 OpenCV 显示图像
-    cv2.imshow('Matches', img_vis)
-    cv2.waitKey(0)  # 等待用户按键
-    cv2.destroyAllWindows()  # 关闭所有窗口
+#     # 使用 OpenCV 显示图像
+#     cv2.imshow('Matches', img_vis)
+#     cv2.waitKey(0)  # 等待用户按键
+#     cv2.destroyAllWindows()  # 关闭所有窗口
+
+def visualize_matches_loftr(img1: np.ndarray, img2: np.ndarray, mkpts1: np.ndarray, mkpts2: np.ndarray, depth_img: np.ndarray, output_path=None):
+    # 将深度图转换为伪彩图用于可视化
+    depth_img_colored = cv2.applyColorMap((depth_img * 255).astype(np.uint8), cv2.COLORMAP_JET)
+
+    # 获取三张图像的高度和宽度
+    h0, w0 = depth_img_colored.shape[:2]  # 深度图
+    h1, w1 = img1.shape[:2]               # 图像1
+    h2, w2 = img2.shape[:2]               # 图像2
+
+    # 创建一个空白画布，水平拼接深度图、图像1和图像2
+    total_width = w0 + w1 + w2
+    max_height = max(h0, h1, h2)
+    img_vis = np.zeros((max_height, total_width, 3), dtype=np.uint8)
+
+    # 放置深度图
+    img_vis[0:h0, 0:w0] = depth_img_colored
+
+    # 放置图像1
+    start_x = w0
+    img_vis[0:h1, start_x:start_x + w1] = img1 if len(img1.shape) == 3 else cv2.cvtColor(img1, cv2.COLOR_GRAY2BGR)
+
+    # 放置图像2
+    start_x = w0 + w1
+    img_vis[0:h2, start_x:start_x + w2] = img2 if len(img2.shape) == 3 else cv2.cvtColor(img2, cv2.COLOR_GRAY2BGR)
+
+    # 随机生成连线颜色
+    colors = [(np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256)) for _ in range(len(mkpts1))]
+
+    # 绘制深度图与图像1之间的匹配点及连线
+    for pt, color in zip(mkpts1, colors):
+        depth_pt = tuple(map(int, pt))                 # 在深度图上的点
+        img1_pt = (int(pt[0]) + w0, int(pt[1]))        # 在图像1上的点（偏移）
+        cv2.circle(img_vis, depth_pt, 4, color, -1)    # 深度图上的点
+        cv2.circle(img_vis, img1_pt, 4, color, -1)     # 图像1上的点
+        cv2.line(img_vis, depth_pt, img1_pt, color, 1) # 连线
+
+    # 绘制图像1与图像2之间的匹配点及连线
+    for (pt1, pt2, color) in zip(mkpts1, mkpts2, colors):
+        img1_pt = (int(pt1[0]) + w0, int(pt1[1]))            # 图像1中的点（偏移后）
+        img2_pt = (int(pt2[0]) + w0 + w1, int(pt2[1]))       # 图像2中的点（偏移后）
+        cv2.circle(img_vis, img1_pt, 4, color, -1)           # 图像1上的点
+        cv2.circle(img_vis, img2_pt, 4, color, -1)           # 图像2上的点
+        cv2.line(img_vis, img1_pt, img2_pt, color, 2)        # 连线
+
+    # 显示结果图像
+    cv2.namedWindow('Matches Visualization', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Matches Visualization', 1200, 400)
+    cv2.imshow('Matches Visualization', img_vis)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # 如果提供了输出路径，则保存结果图像
+    if output_path:
+        cv2.imwrite(output_path, img_vis)
+        print(f"匹配结果已保存到 {output_path}")
 
 def draw_matches(image0, image1, points0, points1, matches, output_path=None):
     """
@@ -152,6 +208,14 @@ def draw_matches(image0, image1, points0, points1, matches, output_path=None):
     image0_np = tensor_to_cv2_image(image0)
     image1_np = tensor_to_cv2_image(image1)
 
+    # 将 image0_np 从 GBR 转换为 RGB
+    image0_np = cv2.cvtColor(image0_np, cv2.COLOR_BGR2RGB)
+
+    # 将 image1_np 从 GBR 转换为 RGB
+    image1_np = cv2.cvtColor(image1_np, cv2.COLOR_BGR2RGB)
+
+
+
     # 将关键点坐标从 torch.Tensor 转换为 NumPy 数组
     points0_np = points0.cpu().numpy()
     points1_np = points1.cpu().numpy()
@@ -169,6 +233,14 @@ def draw_matches(image0, image1, points0, points1, matches, output_path=None):
     )
 
     # 显示结果图像
+    cv2.imshow('rander image', image0_np)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    cv2.imshow('rander image', image1_np)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
 
     cv2.namedWindow('Matches', cv2.WINDOW_NORMAL)  # 创建一个可调整大小的窗口
     cv2.resizeWindow('Matches', 800, 600)  # 设置窗口大小为 800x600 像素
@@ -181,7 +253,73 @@ def draw_matches(image0, image1, points0, points1, matches, output_path=None):
         cv2.imwrite(output_path, img_matches)
         print(f"匹配结果已保存到 {output_path}")
 
+def draw_matches_with_depth(depth_image0, image0, image1, points0, points1, matches, output_path=None):
+    depth_image = (depth_image0 * 255).astype(np.uint8)
 
+    # 将 PyTorch Tensor 转换为 OpenCV 兼容的 NumPy 数组
+    image0_np = tensor_to_cv2_image(image0)
+    image1_np = tensor_to_cv2_image(image1)
+
+
+    # 将 image0_np 从 GBR 转换为 RGB
+    image0_np = cv2.cvtColor(image0_np, cv2.COLOR_BGR2RGB)
+
+    # 将 image1_np 从 GBR 转换为 RGB
+    image1_np = cv2.cvtColor(image1_np, cv2.COLOR_BGR2RGB)
+
+    # 关键点坐标的处理保持不变
+    points0_np = points0.cpu().numpy() if hasattr(points0, 'cpu') else points0
+    points1_np = points1.cpu().numpy() if hasattr(points1, 'cpu') else points1
+
+    # 创建 DMatch 对象，用于表示匹配对
+    dmatches = [cv2.DMatch(i, i, 0) for i in range(len(matches))]
+
+    # 合并深度图、第一张和第二张图像
+    height = max(depth_image.shape[0], image0_np.shape[0], image1_np.shape[0])
+    width = depth_image.shape[1] + image0_np.shape[1] + image1_np.shape[1]
+    combined_image = np.zeros((height, width, 3), dtype=np.uint8)
+
+    # 放置深度图（转为伪彩图）
+    combined_image[0:depth_image.shape[0], 0:depth_image.shape[1]] = cv2.applyColorMap(depth_image, cv2.COLORMAP_JET)
+    # 放置第一张图像
+    start_x = depth_image.shape[1]
+    combined_image[0:image0_np.shape[0], start_x:start_x+image0_np.shape[1]] = image0_np
+    # 放置第二张图像
+    start_x = depth_image.shape[1] + image0_np.shape[1]
+    combined_image[0:image1_np.shape[0], start_x:start_x+image1_np.shape[1]] = image1_np
+
+    # 随机生成匹配连线的颜色
+    colors = [(np.random.randint(0, 256), np.random.randint(0, 256), np.random.randint(0, 256)) for _ in matches]
+
+    # 绘制深度图与第一张图像间的匹配连线及关键点
+    for pt, color in zip(points0_np, colors):
+        depth_pt = (int(pt[0]), int(pt[1]))
+        rgb_pt = (int(pt[0]) + depth_image.shape[1], int(pt[1]))  # 计算RGB图像中匹配点的位置
+        cv2.circle(combined_image, depth_pt, 4, color, -1)  # 在深度图上标记关键点
+        cv2.circle(combined_image, rgb_pt, 4, color, -1)  # 在RGB图上标记关键点
+        cv2.line(combined_image, depth_pt, rgb_pt, color, 1)  # 连线
+
+    # 绘制第一张与第二张图像间的匹配连线及关键点
+    for match, color in zip(dmatches, colors):
+        pt0 = tuple(map(int, points0_np[match.queryIdx]))
+        pt1 = tuple(map(int, points1_np[match.trainIdx]))
+        new_pt0 = (pt0[0] + depth_image.shape[1], pt0[1])  # 更新第一张图片中的点在组合图像中的位置
+        new_pt1 = (pt1[0] + depth_image.shape[1] + image0_np.shape[1], pt1[1])  # 更新第二张图片中的点在组合图像中的位置
+        cv2.circle(combined_image, new_pt0, 4, color, -1)  # 在第一张图上标记关键点
+        cv2.circle(combined_image, new_pt1, 4, color, -1)  # 在第二张图上标记关键点
+        cv2.line(combined_image, new_pt0, new_pt1, color, 2)  # 连线
+
+    # 显示结果图像
+    cv2.namedWindow('Combined Matches', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Combined Matches', 1200, 400)
+    cv2.imshow('Combined Matches', combined_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    # 如果提供了输出路径，则保存结果图像
+    if output_path:
+        cv2.imwrite(output_path, combined_image)
+        print(f"匹配结果已保存到 {output_path}")
 def rz_torch(theta):
     """
     创建一个绕 Z 轴旋转的 4x4 齐次矩阵。
@@ -677,9 +815,9 @@ def match2xy_xyz_LightGlue(kporg,
         normalized_coords = K_inv @ uv_homogeneous
 
         # 计算相机坐标系下的3D坐标
-        X_c = z * normalized_coords[0]
-        Y_c = z * normalized_coords[1]
-        Z_c = z
+        X_c = (z * normalized_coords[0]).item()
+        Y_c = (z * normalized_coords[1]).item()
+        Z_c = z.item()
 
         # 将相机坐标转换为世界坐标系下的3D坐标
         camera_coords = np.array([X_c, Y_c, Z_c,1]).reshape(4, 1)
@@ -732,9 +870,27 @@ def gradient_deep_mask(rander_deep:np.ndarray,
     _, depth_edges = cv2.threshold(gradient_magnitude, TG, 255, cv2.THRESH_BINARY)
 
     # 显示深度边缘
+    # 如果需要，将深度图转换为伪彩色图像以更好地可视化深度信息
+    
+    # 如果rander_deep不是8位深度，请先转换为适合显示的格式
+    if rander_deep.dtype != np.uint8:
+        rander_deep_display = cv2.normalize(rander_deep, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    else:
+        rander_deep_display = rander_deep
+
+    rander_deep_color = cv2.applyColorMap(rander_deep_display, cv2.COLORMAP_JET)
+
+    # 将边缘mask转换为三通道图像，以便与彩色深度图拼接
+    depth_edges_color = cv2.cvtColor(depth_edges, cv2.COLOR_GRAY2BGR)
+
+    # 并排合并图像
+    combined_image = np.hstack((rander_deep_color, depth_edges_color))
+
+    # 显示组合后的图像
     if debug:
-        cv2.imshow('Depth Edges', depth_edges)
-        # cv2.waitKey(0)
+        cv2.imshow('Depth Map and Edges', combined_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
     return depth_edges
 

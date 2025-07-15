@@ -80,6 +80,8 @@ class dataset_base:
         self.camera_gap = 10
 
         self.debug_target = None
+
+        self.pose_out_dir = None
         pass
 
     def get_imag(self,imag_dir:str):

@@ -224,6 +224,11 @@ class linemod_dataset(dataset_base):
         except:
             self.ref_output_dir = None
 
+        try:
+            self.pose_out_dir = config['pose_out_dir']
+        except:
+            self.pose_out_dir = None
+
         # refin参数
         self.refine_CFG = SimpleNamespace(
                 # 初始学习率
