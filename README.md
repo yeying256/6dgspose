@@ -2,7 +2,7 @@
 
 
 
-![img1](./fig/img1.png)
+![img1](./fig/img1.jpeg)
 
 ![img2](./fig/img2.jpeg)
 
