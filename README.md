@@ -2,9 +2,9 @@
 
 
 
-![img1](/home/wangxiao/6d_pose_learn/src/myproject/fig/img1.png)
+![img1](./fig/img1.png)
 
-![img2](/home/wangxiao/6d_pose_learn/src/myproject/fig/img2.jpeg)
+![img2](./fig/img2.jpeg)
 
 # TODO List
 
@@ -160,7 +160,7 @@ After execution, a `metric_out.txt` file with test results will be  created in b
 
 The `onepose_out` and `linemod_pose_out` directories contain per-image  visualization outputs and corresponding pose estimation data.
 
-![img3](/home/wangxiao/6d_pose_learn/src/myproject/fig/img3.jpeg)
+![img3](./fig/img3.jpeg)
 
 # Acknowledgement
 

@@ -2,9 +2,9 @@
 
 
 
-![img1](/home/wangxiao/6d_pose_learn/src/myproject/fig/img1.png)
+![img1](./fig/img1.png)
 
-![img2](/home/wangxiao/6d_pose_learn/src/myproject/fig/img2.jpeg)
+![img2](./fig/img2.jpeg)
 
 # TODO List
 
@@ -162,7 +162,7 @@ python inference/inference_linemod.py configs/inference/linemod_text_superpoint.
 
 在`onepose_out`和`linemod_pose_out`文件夹中包含着每一张图片的可视化信息和位姿预测数据。
 
-![img3](/home/wangxiao/6d_pose_learn/src/myproject/fig/img3.jpeg)
+![img3](./fig/img3.jpeg)
 
 # Acknowledgement
 
