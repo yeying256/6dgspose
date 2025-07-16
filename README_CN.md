@@ -33,7 +33,7 @@ Download the [pretrained models of LoFTR](https://zjueducn-my.sharepoint.com/:f:
 
 Download the [pretrained weights of GS-pose](https://drive.google.com/file/d/1VgOAemCrEeW_nT6qQ3R12oz_3UZmQILy/view?usp=sharing) and store it as `&{workspace}/gspose_model/model_wights.pth`.
 
-If you encounter environment errors, you can use the environment from [pgsr](https://github.com/zju3dv/PGSR) and gradually add any missing libraries based on the error messages.  Additionally, we have modified the source code of  diff-plane-rasterization, specifically fixing the issue where the  original code couldn't run properly when the camera intrinsic parameters `cx, cy` weren't at the image center. Therefore, you cannot use the original diff-plane-rasterization code.
+如果环境报错，可以使用[pgsr](https://github.com/zju3dv/PGSR)的环境，根据报错慢慢添加缺少的库。另外，我们更改了diff-plane-rasterization的源代码，具体修复了代码不能使用相机内参`cx,cy`不在图像中心就不能正常运行的问题。所以，不能使用原来的diff-plane-rasterization代码。
 
 
 
@@ -86,39 +86,39 @@ Onepose-Test dataset is organised under the `dataspace` directory, as below,
 
 ## Onepose test 
 
-For the OnePose test dataset, the initial point cloud is generated as follows:"
+Onepose test 数据集生成初始点云：
 
 ```
 cd {workspace}
 python preprocess/convert_oneposedata.py --onepose_path ***/test_data --colmap_output_path ***/test_data_sfm
 ```
 
-For OnePose test's 3DGS model generation, adjust the script paths to match your local directories.
+onepose test 生成3dgs模型，有可能需要根据你自己电脑的路径更改一下脚本中的路径：
 
 ```
 cd {workspace}
 python preprocess/run_onepose_test_data.py
 ```
 
-Once finished, the script will create a `test_data_pgsr` folder with the output 3DGS model inside.
+运行结束后，会生成一个`test_data_pgsr`的文件夹，里面包含了生成的3dgs模型。
 
 ## Linemod test
 
-For Linemod test dataset point cloud generation, update the dataset path in `linemod_train.yaml` to your local dataset directory.
+Linemod test 数据集生成点云，需要在linemod_train.yaml文件中将数据集路径改成自己电脑上数据集的路径：
 
 ```
 cd {workspace}
 python preprocess/convert_linemodedata.py configs/inference/linemod_train.yaml
 ```
 
-During 3DGS model generation in OnePose test, you may need to modify the script paths according to your local directory structure.
+onepose test 生成3dgs模型，有可能需要根据你自己电脑的路径更改一下脚本中的路径：
 
 ```
 cd {workspace}
 python preprocess/run_linemod.py
 ```
 
-After execution completes, the system will generate a 'linemod_pgsr' folder which includes the output 3DGS model.
+运行结束后，会生成一个`linemod_pgsr`的文件夹，里面包含了生成的3dgs模型。
 
 
 
@@ -138,7 +138,7 @@ python inference/inference.py configs/inference/oneposedata_test.yaml
 
 ## Linemod-test
 
-Please modify the `test_data_sfm` and `test_data` paths in  `oneposedata_test.yaml` to match your local directory structure as  needed.
+你需要运行[gspose](https://github.com/dingdingcai/GSPose)的代码，然后将它的3dgs模型(3DGO_model.ply)复制到我们输出的linemod_pgsr/(id)/3DGO_model.ply 中。
 
 
 
@@ -154,11 +154,13 @@ Linemod-test inference(Superpoint):
 python inference/inference_linemod.py configs/inference/linemod_text_superpoint.yaml configs/inference/linemod_train.yaml
 ```
 
-Please update the `test_data_sfm` and `test_data` paths in `inference_linemod.yaml` to match your specific directory structure.
 
-After execution, a `metric_out.txt` file with test results will be  created in both the `test_data_pgsr` and `linemod_pgsr` folders.
 
-The `onepose_out` and `linemod_pose_out` directories contain per-image  visualization outputs and corresponding pose estimation data.
+在inference_linemod.yaml文件中需要根据你自己的需要将路径修改为你自己的 `test_data_sfm`,`test_data` 路径。
+
+运行结束后，会在`test_data_pgsr`和`linemod_pgsr`文件夹目录下生成一个`metric_out.txt`文件，里面包含着测试数据。
+
+在`onepose_out`和`linemod_pose_out`文件夹中包含着每一张图片的可视化信息和位姿预测数据。
 
 ![img3](/home/wangxiao/6d_pose_learn/src/myproject/fig/img3.jpeg)
 
