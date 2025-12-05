@@ -12,6 +12,9 @@ sys.path.append(dir_path.__str__())
 import time
 import random
 
+from scipy.fftpack import dct, idct
+
+
 import open3d as o3d
 
 import numpy as np
@@ -355,7 +358,23 @@ class match_2d3d():
 
         self.use_pose_refine = config['match']['use_pose_refine']
 
+        try:
+            self.camera_num_gap = config['match']['camera_num_gap']
+            self.camera_num_uplimit = config['match']['camera_num_uplimit']
 
+            # 这个是置信度的调试
+            self.gap = config['match']['gap']
+            self.up_limit = config['match']['up_limit']
+        except:
+            self.camera_num_gap = None
+            self.camera_num_uplimit = None
+            self.gap = None
+            self.up_limit = None
+
+        try:
+            self.fadc = config['fadc']
+        except:
+            self.fadc = False
         
         pass
 
@@ -606,8 +625,12 @@ class match_2d3d():
         '''
         img_xys =[]
         gs_xyz_ws = []
+        per_camera_times = []
 
+        start_total = time.perf_counter()
+        i_count = 0
         for camera in cameras:
+            cam_start = time.perf_counter()
             render = GS_Renderer(camera, GS_model, self.gaussian_PipeP, self.gaussian_BG)
             render_img = render['render']
 
@@ -619,6 +642,15 @@ class match_2d3d():
             dg_mask = match_utils.gradient_deep_mask(deepsimg_np,TG=10,debug=debug)
 
             render_img_np = render_img.permute(1, 2, 0).detach().cpu().numpy()
+
+            if self.fadc:
+                # 渲染出来的是0-1的
+                render_img = self.enhance_rendered_fadc_tensor(render_img)
+
+                # target是0-255的
+                img_target = self.enhance_image_fadc_style(img_target)
+                
+
             # 生成 mask
             mask_black = np.any(render_img_np != 0, axis=-1).astype(np.uint8)
 
@@ -626,7 +658,7 @@ class match_2d3d():
             inverted_dg_mask = ~dg_mask 
 
             final_mask = np.logical_and(inverted_dg_mask, mask_black).astype(np.uint8)
-
+            match_start = time.perf_counter()
             if match == 'LightGlue':
                 img_xy,gs_xyz_w = self.match2d3d(img_rander=render_img,
                                                 img_rgb=img_target,
@@ -644,10 +676,21 @@ class match_2d3d():
 
             img_xys.extend(img_xy)
             gs_xyz_ws.extend(gs_xyz_w)
+            match_time = time.perf_counter() - match_start
+            cam_total_time = time.perf_counter() - cam_start
+
+            per_camera_times.append({
+                'camera_idx': i_count,
+                'total_sec': cam_total_time,
+                'match_sec': match_time
+            })
+            i_count+=1
 
         gs_xyz_ws = np.array(gs_xyz_ws, dtype=np.float32)
         img_xys = np.array(img_xys, dtype=np.float32)
-        
+
+        # RANSAC 时间
+        ransac_start = time.perf_counter()
 
         dist_coeffs = np.zeros(shape=[8, 1], dtype="float64")
 
@@ -659,6 +702,19 @@ class match_2d3d():
             coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
             o3d.visualization.draw_geometries([pcd,coordinate_frame])
 
+        ransac_time = time.perf_counter() - ransac_start
+
+
+        total_time = time.perf_counter() - start_total
+        # 构建时间统计信息
+        timing_info = {
+            'total_sec': total_time,
+            'num_cameras': len(cameras),
+            'per_camera_stats_sec': per_camera_times,
+            'ransac_sec': ransac_time,
+            'avg_camera_sec': np.mean([t['total_sec'] for t in per_camera_times]) if per_camera_times else 0.0,
+            'max_camera_sec': np.max([t['total_sec'] for t in per_camera_times]) if per_camera_times else 0.0,
+        }
 
         # 使用掩码过滤掉不符合几何约束的匹配点
         try:
@@ -666,10 +722,10 @@ class match_2d3d():
             inliers = mask.ravel() == 1
             gs_xyz_ws = gs_xyz_ws[inliers]
             img_xys = img_xys[inliers]
-            return img_xys,gs_xyz_ws
+            return img_xys,gs_xyz_ws,timing_info
         except:
             print("No inliers found.")
-            return img_xys,gs_xyz_ws
+            return img_xys,gs_xyz_ws,timing_info
 
             
         
@@ -690,7 +746,8 @@ class match_2d3d():
         # img1 = cv2.imread(f'{imag_path}/55.png', cv2.IMREAD_GRAYSCALE)
         height, width = img_target.shape[:2]
 
-
+        timings = {}
+        t0 = time.time()
 
         cameras = match_utils.box2gscamera(box=bbox_coords,
                                            K=initin1,
@@ -699,7 +756,7 @@ class match_2d3d():
                                            camera_num=self.camera_num,
                                            debug=debug,
                                            camera_distance_scale = camera_distance_scale)
-        
+        timings['camera_generation'] = time.time() - t0
         # cameras = match_utils.box2gscamera_linemod(box=bbox_coords,K=initin1,height=height,width=width,camera_num=self.camera_num)
         K_img_np = match_utils.convert2K(initin1).cpu().numpy()
 
@@ -709,10 +766,14 @@ class match_2d3d():
             img_target = img_target_cut
             K_img_np = K_cut
         
+
+        if debug:
+            match_utils.simple_visualize_camera_sequences(cameras,camera_ref)
+
         if camera_ref is not None:
             cameras = cameras + camera_ref
 
-        img_xys,gs_xyz_ws = self.camera_matchs(cameras= cameras,
+        img_xys,gs_xyz_ws,times_info = self.camera_matchs(cameras= cameras,
                                                GS_model= GS_model,
                                                img_target=img_target,
                                                debug=debug,
@@ -720,6 +781,7 @@ class match_2d3d():
 
         dist_coeffs = np.zeros(shape=[8, 1], dtype="float64")
         T_ = np.eye(4)
+        t_pnp = time.perf_counter()
         try:
             # 这里一定是camera[0]因为这里的camera0是根据数据集生成的。跟targetimg相同。
             _, rvec, tvec, inliers = cv2.solvePnPRansac(gs_xyz_ws, img_xys,K_img_np,dist_coeffs,
@@ -745,7 +807,10 @@ class match_2d3d():
         except:
             print("No inliers found.")
 
+        pnp_time = time.perf_counter() - t_pnp
+        refine_time = 0.0
         if self.use_pose_refine == True:
+            t_refine = time.perf_counter()
             K = match_utils.convert2K(initin1)
             # item 是转化为标量
             fx = K[0,0].item()
@@ -798,9 +863,14 @@ class match_2d3d():
             gs3d_pose_inv = np.linalg.inv(gs3d_delta_RT_np)
             init_T = T_
             T_ = (T_@gs3d_delta_RT_np)
+            refine_time = time.perf_counter() - t_refine
 
+        output['camera_matching_detail'] = times_info
+        output['pnp_sec'] = pnp_time
+        output['pose_refinement_sec'] = refine_time
+        output['camera_generation_sec'] = timings.get('camera_generation', 0.0)
 
-        return T_,init_T
+        return T_,init_T,output
     
 
 
@@ -922,7 +992,7 @@ class match_2d3d():
         init_metrics = {"R_errs":[],
                    "t_errs":[]}
         
-        camera_ref =  self.camera_ref_gen(dataset,object_name)
+        camera_ref =  self.camera_ref_gen(dataset,object_name,gap=dataset.dataset.camera_gap)
 
 
         # 记录pose
@@ -930,12 +1000,14 @@ class match_2d3d():
         pose_out_dir_temp = f"{dataset.dataset.pose_out_dir}/{object_name}"
         os.makedirs(pose_out_dir_temp, exist_ok=True)
 
+
+        all_timings = []  # 用于收集每帧的 output_info_time
         for i in tqdm(range(0,len(img_target_dir)),desc="Processing images"):
             img_target = cv2.imread(img_target_dir[i])
             initin_np = match_utils.read_txt(initin1[i])
             print(f"initin1[i] = {initin1[i]}")
             print(f"img_target_dir[i] = {img_target_dir[i]}")
-            T_p,init_T = self.pose_estimate(img_target=img_target,
+            T_p,init_T,output_info_time = self.pose_estimate(img_target=img_target,
                                             GS_model=GS_model,
                                             initin1=initin_np,
                                             bbox_coords=bbox_points_np,
@@ -943,6 +1015,7 @@ class match_2d3d():
                                             refine_cfg=dataset.dataset.refine_CFG,
                                             debug=dataset.dataset.debug)
             
+            all_timings.append(output_info_time)
             GS_model.initialize_pose()
 
             camK = match_utils.convert2K(initin_np)
@@ -1012,7 +1085,14 @@ class match_2d3d():
             cv2.imwrite(img_init_dir, initpose_rgb_show)
             cv2.imwrite(img_refine_dir, refinpose_rgb_show)
 
+            # === 新增：保存 timing 信息到 JSON 文件 ===
 
+            
+
+            # 确保所有 numpy 类型可序列化（如 np.float32 → float）
+
+
+            # ========================================
 
             # cv2.imshow('Rendered Bboxes', initpose_rgb_show)
             # 等待任意键按下后关闭窗口
@@ -1066,6 +1146,45 @@ class match_2d3d():
             init_metrics["t_errs"].append(t_err_init)
 
 
+            timing_path = os.path.join(pose_dir, "timing.txt")
+
+
+            def write_dict_to_txt(f, d, prefix=""):
+                for k, v in d.items():
+                    key_name = f"{prefix}{k}" if prefix else k
+                    if isinstance(v, dict):
+                        write_dict_to_txt(f, v, prefix=f"{key_name}.")
+                    elif isinstance(v, (list, tuple)):
+                        if len(v) > 0 and isinstance(v[0], dict):
+                            # list of dicts: per_camera_stats_sec
+                            for i, item in enumerate(v):
+                                write_dict_to_txt(f, item, prefix=f"{key_name}[{i}].")
+                        elif len(v) > 0 and isinstance(v[0], (float, int, np.number)):
+                            # simple list of numbers (e.g., step_times_sec)
+                            vals = ' '.join([f"{x:.6f}" if isinstance(x, (float, np.floating)) else str(x) for x in v])
+                            f.write(f"{key_name}: {vals}\n")
+                        else:
+                            # fallback
+                            f.write(f"{key_name}: {v}\n")
+                    elif isinstance(v, np.ndarray):
+                        # Handle 4x4 matrix like gs3d_delta_RT
+                        f.write(f"{key_name}:\n")
+                        for row in v:
+                            if row.ndim == 0:
+                                f.write(f"  {row.item():.6f}\n")
+                            else:
+                                row_str = ' '.join([f"{x:.6f}" for x in row.flatten()])
+                                f.write(f"  {row_str}\n")
+                    else:
+                        # scalar: float, int, etc.
+                        if isinstance(v, (float, np.floating)):
+                            f.write(f"{key_name}: {v:.6f}\n")
+                        else:
+                            f.write(f"{key_name}: {v}\n")
+            with open(timing_path, 'w') as f_txt:
+                write_dict_to_txt(f_txt, output_info_time)
+
+
             pass
 
 
@@ -1073,15 +1192,45 @@ class match_2d3d():
 
         init_agg_metric = metric_utils.aggregate_metrics(init_metrics)
 
+
+        avg_timing = {}
+
+
+        if all_timings:
+            # 顶层标量字段（直接平均）
+            scalar_keys = ['camera_generation_sec', 'pnp_sec', 'pose_refinement_sec']
+            for key in scalar_keys:
+                if key in all_timings[0]:
+                    values = [t.get(key, 0.0) for t in all_timings]
+                    avg_timing[key] = np.mean(values)
+            # camera_matching_detail 下的标量字段
+            cm_keys = ['total_sec', 'ransac_sec', 'avg_camera_sec', 'max_camera_sec', 'num_cameras']
+            for key in cm_keys:
+                if 'camera_matching_detail' in all_timings[0] and key in all_timings[0]['camera_matching_detail']:
+                    values = [t['camera_matching_detail'].get(key, 0.0) for t in all_timings]
+                    avg_timing[f"camera_matching.{key}"] = np.mean(values)
+            # 可选：平均总 pipeline 时间（如果需要）
+            total_per_frame = []
+            for t in all_timings:
+                total = t.get('camera_generation_sec', 0) + t.get('pnp_sec', 0) + t.get('pose_refinement_sec', 0)
+                total_per_frame.append(total)
+            avg_timing['total_pipeline_sec'] = np.mean(total_per_frame)
+
+
         with open(dataset.dataset.metric_out_dir, 'a') as f :
             f.write(f"name = {object_name} : \n")
-
             f.write("init_metric\n")
             for key, value in init_agg_metric.items():
                 f.write(f"{key}: {value}\n")
             f.write("refine_metric\n")
             for key, value in agg_metric.items():
                 f.write(f"{key}: {value}\n")
+
+            # ===== 新增：写入平均 timing =====
+            f.write("average_timing_sec\n")
+            for key, value in sorted(avg_timing.items()):
+                f.write(f"{key}: {value:.6f}\n")
+            f.write("\n")  # 空行分隔不同物体
 
 
         print(agg_metric)
@@ -1120,6 +1269,274 @@ class match_2d3d():
 
         return cameras
         pass
+    def pose_estimate_batch2_FADC(self,img_target_dir:List[str],
+                                    GS_model_dir:str,
+                                    initin1:List[str],
+                                    bbox_coords:str,
+                                    object_name:str,
+                                    dataset:datasets):
+            '''
+            处理一个场景的位姿估计
+            '''
+            GS_model = GaussianModel(3)
+            GS_model.load_ply(GS_model_dir)
+            GS_model.clip_to_bounding_box_fromfile(bbox_coords)
+            bbox_coords_np = match_utils.read_txt(bbox_coords)
+            bbox_points_np = match_utils.convert_to_3d_points(bbox_coords_np)
+            with open(dataset.dataset.metric_out_dir, 'a') as f :
+                f.write(f"{object_name}\n")
+
+            # 计算直径
+            dataset.dataset.diameter[object_name] = gs_utils.torch_compute_diameter_from_pointcloud(GS_model._xyz)
+
+            metrics = {"R_errs":[],
+                    "t_errs":[]}
+            init_metrics = {"R_errs":[],
+                    "t_errs":[]}
+            
+            camera_ref =  self.camera_ref_gen(dataset,object_name,gap=dataset.dataset.camera_gap)
+
+
+            # 记录pose
+            # 创建这个文件夹
+            pose_out_dir_temp = f"{dataset.dataset.pose_out_dir}/{object_name}"
+            os.makedirs(pose_out_dir_temp, exist_ok=True)
+
+
+            all_timings = []  # 用于收集每帧的 output_info_time
+            for i in tqdm(range(0,len(img_target_dir)),desc="Processing images"):
+                img_target = cv2.imread(img_target_dir[i])
+                initin_np = match_utils.read_txt(initin1[i])
+                print(f"initin1[i] = {initin1[i]}")
+                print(f"img_target_dir[i] = {img_target_dir[i]}")
+                T_p,init_T,output_info_time = self.pose_estimate(img_target=img_target,
+                                                GS_model=GS_model,
+                                                initin1=initin_np,
+                                                bbox_coords=bbox_points_np,
+                                                camera_ref=camera_ref,
+                                                refine_cfg=dataset.dataset.refine_CFG,
+                                                debug=dataset.dataset.debug)
+                
+                all_timings.append(output_info_time)
+                GS_model.initialize_pose()
+
+                camK = match_utils.convert2K(initin_np)
+                # 读取数据集pose
+                pose_data = match_utils.read_txt(dataset.dataset.pose_dir_lists[object_name][i])
+                pose_data_np = np.array(pose_data).reshape(4, 4)
+
+                # pose_out_dir_temp
+                name = os.path.splitext(os.path.basename(img_target_dir[i]))[0]
+
+                # 这个路径是到每张照片的输出文件夹
+                pose_dir = f"{pose_out_dir_temp}/{name}"
+
+                os.makedirs(pose_dir, exist_ok=True)
+
+                pose_init_dir = f"{pose_dir}/pose_init.txt"
+                pose_refine_dir = f"{pose_dir}/pose_refine.txt"
+
+
+                # 所有文件路径
+                pose_files = [pose_init_dir, pose_refine_dir]
+
+                # 删除已存在的文件
+                for file_path in pose_files:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+
+                # 创建新的空文件
+                for file_path in pose_files:
+                    with open(file_path, 'w') as f:
+                        pass  # 创建空文件即可
+
+
+                with open(pose_init_dir, 'w') as f:
+                        # init_T
+                        np.savetxt(f, init_T, fmt='%.6f', delimiter=' ')
+                        pass  # 创建空文件即可
+                
+                with open(pose_refine_dir, 'w') as f:
+                        # init_T
+                        np.savetxt(f, T_p, fmt='%.6f', delimiter=' ')
+                        pass  # 创建空文件即可
+                
+                
+                # traget image 的np表示 w,h,c
+                rgb_np = cv2.cvtColor(img_target, cv2.COLOR_RGB2BGR)
+
+                if rgb_np.dtype != np.uint8:
+                    if rgb_np.max() <= 1.0:
+                        rgb_np = (rgb_np * 255).astype(np.uint8)
+                    else:
+                        rgb_np = rgb_np.astype(np.uint8)
+
+
+                rgb_np = cv2.cvtColor(rgb_np, cv2.COLOR_BGR2RGB)
+
+
+
+                img_init_dir = f"{pose_dir}/pose_init.png"
+                img_refine_dir = f"{pose_dir}/pose_refine.png"
+
+                camK_np = camK.cpu().numpy().copy()
+                initpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,init_T,bbox_points_np,camK_np,rgb_np)
+                refinpose_rgb_show = draw_bbox.render_bboxes(pose_data_np,T_p,bbox_points_np,camK_np,rgb_np)
+
+                # 保存图像，若文件已存在则覆盖
+                cv2.imwrite(img_init_dir, initpose_rgb_show)
+                cv2.imwrite(img_refine_dir, refinpose_rgb_show)
+
+                # === 新增：保存 timing 信息到 JSON 文件 ===
+
+                
+
+                # 确保所有 numpy 类型可序列化（如 np.float32 → float）
+
+
+                # ========================================
+
+                # cv2.imshow('Rendered Bboxes', initpose_rgb_show)
+                # 等待任意键按下后关闭窗口
+                # cv2.waitKey(0)
+                # cv2.destroyAllWindows()
+                
+
+
+
+
+
+
+                # 每次优化完参数之后就要清空一下，要不然就会叠加上一次的数据
+
+                
+                # 初始的位姿
+                init_add = metric_utils.calc_add_metric(GS_model._xyz.detach().cpu().numpy(), dataset.dataset.diameter[object_name],init_T,pose_data_np)
+                # 优化的位姿
+                refine_add = metric_utils.calc_add_metric(GS_model._xyz.detach().cpu().numpy(), dataset.dataset.diameter[object_name],T_p,pose_data_np)
+                
+                # refine的数据
+                if 'ADD_metric' not in metrics.keys():
+                    metrics['ADD_metric'] = list()
+                metrics['ADD_metric'].append(refine_add)
+
+                refine_proj_err = metric_utils.calc_projection_2d_error(bbox_points_np, T_p, pose_data_np, camK.cpu().numpy())
+                if 'Proj2D' not in metrics.keys():
+                    metrics['Proj2D'] = list()
+                metrics['Proj2D'].append(refine_proj_err)
+
+
+                R_err,t_err= metric_utils.calc_pose_error(T_p,pose_data_np)
+                metrics["R_errs"].append(R_err)
+                metrics["t_errs"].append(t_err)
+
+
+                # init的数据
+
+                if 'ADD_metric' not in init_metrics.keys():
+                    init_metrics['ADD_metric'] = list()
+                init_metrics['ADD_metric'].append(init_add)
+
+                refine_proj_err = metric_utils.calc_projection_2d_error(bbox_points_np, init_T, pose_data_np, camK.cpu().numpy())
+                if 'Proj2D' not in init_metrics.keys():
+                    init_metrics['Proj2D'] = list()
+                init_metrics['Proj2D'].append(refine_proj_err)
+
+
+                R_err_init,t_err_init= metric_utils.calc_pose_error(init_T,pose_data_np)
+                init_metrics["R_errs"].append(R_err_init)
+                init_metrics["t_errs"].append(t_err_init)
+
+
+                timing_path = os.path.join(pose_dir, "timing.txt")
+
+
+                def write_dict_to_txt(f, d, prefix=""):
+                    for k, v in d.items():
+                        key_name = f"{prefix}{k}" if prefix else k
+                        if isinstance(v, dict):
+                            write_dict_to_txt(f, v, prefix=f"{key_name}.")
+                        elif isinstance(v, (list, tuple)):
+                            if len(v) > 0 and isinstance(v[0], dict):
+                                # list of dicts: per_camera_stats_sec
+                                for i, item in enumerate(v):
+                                    write_dict_to_txt(f, item, prefix=f"{key_name}[{i}].")
+                            elif len(v) > 0 and isinstance(v[0], (float, int, np.number)):
+                                # simple list of numbers (e.g., step_times_sec)
+                                vals = ' '.join([f"{x:.6f}" if isinstance(x, (float, np.floating)) else str(x) for x in v])
+                                f.write(f"{key_name}: {vals}\n")
+                            else:
+                                # fallback
+                                f.write(f"{key_name}: {v}\n")
+                        elif isinstance(v, np.ndarray):
+                            # Handle 4x4 matrix like gs3d_delta_RT
+                            f.write(f"{key_name}:\n")
+                            for row in v:
+                                if row.ndim == 0:
+                                    f.write(f"  {row.item():.6f}\n")
+                                else:
+                                    row_str = ' '.join([f"{x:.6f}" for x in row.flatten()])
+                                    f.write(f"  {row_str}\n")
+                        else:
+                            # scalar: float, int, etc.
+                            if isinstance(v, (float, np.floating)):
+                                f.write(f"{key_name}: {v:.6f}\n")
+                            else:
+                                f.write(f"{key_name}: {v}\n")
+                with open(timing_path, 'w') as f_txt:
+                    write_dict_to_txt(f_txt, output_info_time)
+
+
+                pass
+
+
+            agg_metric = metric_utils.aggregate_metrics(metrics)
+
+            init_agg_metric = metric_utils.aggregate_metrics(init_metrics)
+
+
+            avg_timing = {}
+
+
+            if all_timings:
+                # 顶层标量字段（直接平均）
+                scalar_keys = ['camera_generation_sec', 'pnp_sec', 'pose_refinement_sec']
+                for key in scalar_keys:
+                    if key in all_timings[0]:
+                        values = [t.get(key, 0.0) for t in all_timings]
+                        avg_timing[key] = np.mean(values)
+                # camera_matching_detail 下的标量字段
+                cm_keys = ['total_sec', 'ransac_sec', 'avg_camera_sec', 'max_camera_sec', 'num_cameras']
+                for key in cm_keys:
+                    if 'camera_matching_detail' in all_timings[0] and key in all_timings[0]['camera_matching_detail']:
+                        values = [t['camera_matching_detail'].get(key, 0.0) for t in all_timings]
+                        avg_timing[f"camera_matching.{key}"] = np.mean(values)
+                # 可选：平均总 pipeline 时间（如果需要）
+                total_per_frame = []
+                for t in all_timings:
+                    total = t.get('camera_generation_sec', 0) + t.get('pnp_sec', 0) + t.get('pose_refinement_sec', 0)
+                    total_per_frame.append(total)
+                avg_timing['total_pipeline_sec'] = np.mean(total_per_frame)
+
+
+            with open(dataset.dataset.metric_out_dir, 'a') as f :
+                f.write(f"name = {object_name} : \n")
+                f.write("init_metric\n")
+                for key, value in init_agg_metric.items():
+                    f.write(f"{key}: {value}\n")
+                f.write("refine_metric\n")
+                for key, value in agg_metric.items():
+                    f.write(f"{key}: {value}\n")
+
+                # ===== 新增：写入平均 timing =====
+                f.write("average_timing_sec\n")
+                for key, value in sorted(avg_timing.items()):
+                    f.write(f"{key}: {value:.6f}\n")
+                f.write("\n")  # 空行分隔不同物体
+
+
+            print(agg_metric)
+            return metrics,init_metrics
 
 
     def camera_ref_gen_linemod(self,detaset:datasets,id:str):
@@ -1207,6 +1624,19 @@ class match_2d3d():
         
         # camera_ref =  self.camera_ref_gen_linemod(dataset,object_name)
         # 进入每个照片
+
+        # ===== 循环外部：初始化空列表用于收集每轮的时间数据 =====
+
+        total_times = []
+        avg_step_times = []
+        iter_steps = []
+        match_total_times = []
+        match_avg_camera_times = []
+        match_max_camera_times = []
+        match_ransac_times = []
+        pnp_times = []
+
+
         for i in tqdm(range(0,len(img_target_dir)),desc="Processing images"):
             # 这个是bgr
             img_target = cv2.imread(img_target_dir[i])
@@ -1258,9 +1688,9 @@ class match_2d3d():
             que_image = torch_F.interpolate(que_image, size=(new_hei, new_wid), mode='bilinear', align_corners=True)
             
             # obj_data = naive_perform_segmentation_and_encoding(model_func, 
-                                                                # device=device,
-                                                                # que_image=que_image,
-                                                                # ref_database=reference_database)
+            #                                                     device=device,
+            #                                                     que_image=que_image,
+            #                                                     ref_database=reference_database)
             
             # 对查询图像进行分割和编码。
             obj_data = perform_segmentation_and_encoding(model_func, 
@@ -1414,7 +1844,7 @@ class match_2d3d():
             
 
             # …………………………………………………………………………gspose
-            T_p,init_T,linemod_init = self.pose_estimate_linemod(img_target=masked_rgb_np,
+            T_p,init_T,linemod_init,output = self.pose_estimate_linemod(img_target=masked_rgb_np,
                                             GS_model=GS_model,
                                             initin1=K_crop,
                                             bbox_coords=box,
@@ -1422,6 +1852,8 @@ class match_2d3d():
                                             debug=dataset.dataset.debug,
                                             camera_distance_scale = dataset.dataset.camera_distance_scale,
                                             mask_cut=True)
+            
+
             if dataset.dataset.debug:
                 print("")
             # 读取数据集pose
@@ -1445,13 +1877,24 @@ class match_2d3d():
 
             os.makedirs(pose_dir, exist_ok=True)
 
+            # output 里面的数据内容：
+            # output = {
+            #     'gs3d_delta_RT': gs3d_delta_RT,
+            #     'iter_step': iter_step,
+            #     'render_img': render_img,
+            #     'total_time_sec': total_time,
+            #     'avg_step_time_sec': avg_step_time,
+            #     'step_times_sec': step_times,  # 可选：保留每步时间用于详细分析
+            # }
+            # match_time_info
             pose_init_dir = f"{pose_dir}/pose_init.txt"
             pose_refine_dir = f"{pose_dir}/pose_refine.txt"
             pose_gspose_dir = f"{pose_dir}/pose_gspose.txt"
+            time_data_dir = f"{pose_dir}/time.txt"
 
 
             # 所有文件路径
-            pose_files = [pose_init_dir, pose_refine_dir, pose_gspose_dir]
+            pose_files = [pose_init_dir, pose_refine_dir, pose_gspose_dir,time_data_dir]
 
             # 删除已存在的文件
             for file_path in pose_files:
@@ -1478,6 +1921,44 @@ class match_2d3d():
                     # init_T
                     np.savetxt(f, linemod_init, fmt='%.6f', delimiter=' ')
                     pass  # 创建空文件即可
+            # === 新增：写入时间性能数据 ===
+
+
+            # 获取优化阶段的时间信息
+            total_times.append(output['total_time_sec'])
+            avg_step_times.append(output['avg_step_time_sec'])
+            iter_steps.append(output['iter_step'] + 1)  # 转为实际步数
+            match_total_times.append(output['match_time_info']['total_sec'])
+            match_avg_camera_times.append(output['match_time_info']['avg_camera_sec'])
+            match_max_camera_times.append(output['match_time_info']['max_camera_sec'])
+            match_ransac_times.append(output['match_time_info']['ransac_sec'])
+            pnp_times.append(output['pnp_time'])
+            # 获取优化阶段的时间信息
+            total_time = output['total_time_sec']
+            avg_step_time = output['avg_step_time_sec']
+            iter_step = output['iter_step']
+            step_times = output['step_times_sec']
+            # 获取匹配阶段的时间信息
+            match_total_time = output['match_time_info']['total_sec']
+            match_avg_camera_time = output['match_time_info']['avg_camera_sec']
+            match_max_camera_time = output['match_time_info']['max_camera_sec']
+            match_ransac_time = output['match_time_info']['ransac_sec']
+            pnp_time = output['pnp_time']
+            # 写入时间数据
+            with open(time_data_dir, 'w') as f:
+                # 匹配阶段时间信息
+                f.write(f"matching_total_time_sec: {match_total_time:.6f}\n")
+                f.write(f"matching_avg_camera_time_sec: {match_avg_camera_time:.6f}\n")
+                f.write(f"matching_max_camera_time_sec: {match_max_camera_time:.6f}\n")
+                f.write(f"matching_ransac_time_sec: {match_ransac_time:.6f}\n")
+                f.write(f"pnp_times_time_sec: {pnp_time:.6f}\n")
+                # 优化阶段时间信息
+                f.write(f"optimization_total_time_sec: {total_time:.6f}\n")
+                f.write(f"optimization_avg_step_time_sec: {avg_step_time:.6f}\n")
+                f.write(f"optimization_iter_step: {iter_step + 1}\n")
+                f.write("optimization_step_times_sec: ")
+                f.write(' '.join([f"{t:.6f}" for t in step_times]) + "\n")
+
             
             # traget image 的np表示 w,h,c
             rgb_np = rgb_image.permute(1, 2, 0).numpy()
@@ -1588,7 +2069,15 @@ class match_2d3d():
             init_metrics["t_errs"].append(t_err_init)
 
 
+        avg_total_time = np.mean(total_times)
+        avg_avg_step_time = np.mean(avg_step_times)
+        avg_iter_step = np.mean(iter_steps)
+        avg_match_total_time = np.mean(match_total_times)
+        avg_match_avg_camera_time = np.mean(match_avg_camera_times)
+        avg_match_max_camera_time = np.mean(match_max_camera_times)
+        avg_match_ransac_time = np.mean(match_ransac_times)
 
+        avg_pnp_times = np.mean(pnp_times)
 
 
 
@@ -1612,6 +2101,19 @@ class match_2d3d():
             f.write("refine_metric\n")
             for key, value in agg_metric.items():
                 f.write(f"{key}: {value}\n")
+
+            # === 新增：写入平均时间性能指标 ===
+            f.write("timing_avg_metric\n")
+            f.write(f"optimization_total_time_sec: {avg_total_time:.6f}\n")
+            f.write(f"optimization_avg_step_time_sec: {avg_avg_step_time:.6f}\n")
+            f.write(f"optimization_avg_iter_step: {avg_iter_step:.2f}\n")
+            f.write(f"matching_total_time_sec: {avg_match_total_time:.6f}\n")
+            f.write(f"matching_avg_per_camera_time_sec: {avg_match_avg_camera_time:.6f}\n")
+            f.write(f"matching_max_per_camera_time_sec: {avg_match_max_camera_time:.6f}\n")
+            f.write(f"matching_ransac_time_sec: {avg_match_ransac_time:.6f}\n")
+            f.write(f"avg_pnp_times: {avg_pnp_times:.6f}\n")
+
+            f.write("\n")  # 增加空行分隔不同物体的结果，便于阅读
             
 
 
@@ -1670,7 +2172,7 @@ class match_2d3d():
 
         
 
-        img_xys,gs_xyz_ws = self.camera_matchs(cameras= cameras,
+        img_xys,gs_xyz_ws,time_info = self.camera_matchs(cameras= cameras,
                                                GS_model= GS_model,
                                                img_target=img_target,
                                                match=self.match_name,
@@ -1681,6 +2183,7 @@ class match_2d3d():
         T_init_ref[:3,:3] = cameras[0].R.T
         T_init_ref[:3,3] = cameras[0].T
         T_ = T_init_ref.copy()
+        t_pnp = time.perf_counter()
         try:
             _, rvec, tvec, inliers = cv2.solvePnPRansac(gs_xyz_ws, 
                                                         img_xys,cameras[0].get_k().cpu().numpy(),
@@ -1706,7 +2209,7 @@ class match_2d3d():
 
         except:
             print("No inliers found.")
-
+        pnp_time = time.perf_counter() - t_pnp
         if self.use_pose_refine == True:
             K = match_utils.convert2K(initin1)
             # item 是转化为标量
@@ -1723,17 +2226,17 @@ class match_2d3d():
             # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-            # if d_trans>0.08:
-            #     T_ = T_init_ref.copy()
-            #     camera = cameras[0]
-            # else:
-            #     camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
-            #                     FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
-            #                     image_name='',image_path='',uid=0,preload_img=False)
+            if d_trans>0.08:
+                T_ = T_init_ref.copy()
+                camera = cameras[0]
+            else:
+                camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
+                                FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
+                                image_name='',image_path='',uid=0,preload_img=False)
             
             # if d_trans>0.08:
-            T_ = T_init_ref.copy()
-            camera = cameras[0]
+            # T_ = T_init_ref.copy()
+            # camera = cameras[0]
             # else:
             #     camera = Camera(colmap_id=0,R=T_[:3,:3].T,T=T_[:3,3],
             #                     FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
@@ -1760,7 +2263,7 @@ class match_2d3d():
             # cv2.destroyAllWindows()
 
 
-            class_gsrefine = GS_refine()
+            class_gsrefine = GS_refine(refine_cfg)
 
 
             imag0_rgb = cv2.cvtColor(img_target, cv2.COLOR_BGR2RGB)
@@ -1771,7 +2274,9 @@ class match_2d3d():
                                                gaussians=GS_model,
                                                return_loss=True,
                                                debug=debug)
-        
+            # 把一些时间信息放进来
+            output['match_time_info'] = time_info
+            output['pnp_time']=pnp_time
             # 返回的是4x4的np格式的位姿矩阵
             gs3d_delta_RT_np = output['gs3d_delta_RT']
             # gs3d_delta_RT_np[:3,:3] = 
@@ -1780,5 +2285,96 @@ class match_2d3d():
             T_ = (T_@gs3d_delta_RT_np)
 
 
-        return T_,init_T,T_init_ref
+        return T_,init_T,T_init_ref,output
     
+    # import cv2
+    # import numpy as np
+    # from scipy.fftpack import dct, idct
+
+
+
+    def enhance_image_fadc_style(self,image_rgb, alpha=0.35, block_size=8, lf_cut=2):
+        """
+        FADC-inspired image enhancement for 2D-2D matching.
+        - Works on luminance only (perceptually meaningful)
+        - Boosts high-frequency details via DCT
+        - No training, no model, no dependencies beyond cv2/numpy/scipy
+        """
+
+        def _dct2(block):
+            return dct(dct(block.T, norm='ortho').T, norm='ortho')
+
+        def _idct2(block):
+            return idct(idct(block.T, norm='ortho').T, norm='ortho')
+        # Convert to YCrCb and process Y channel
+        img_ycrcb = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2YCrCb)
+        y, cr, cb = cv2.split(img_ycrcb)
+        y = y.astype(np.float32)
+
+        h, w = y.shape
+        enhanced_y = y.copy()  # Initialize with original
+
+        # Process non-overlapping blocks
+        for i in range(0, h - block_size + 1, block_size):
+            for j in range(0, w - block_size + 1, block_size):
+                block = y[i:i+block_size, j:j+block_size]
+
+                # Forward DCT
+                dct_coeff = _dct2(block)
+
+                # Zero out low-frequency components (top-left KxK)
+                hf_coeff = dct_coeff.copy()
+                hf_coeff[:lf_cut, :lf_cut] = 0.0
+
+                # Reconstruct high-frequency residual
+                hf_residual = _idct2(hf_coeff)
+
+                # Add back scaled high-frequency detail
+                enhanced_y[i:i+block_size, j:j+block_size] += alpha * hf_residual
+
+        # Clip and convert back
+        enhanced_y = np.clip(enhanced_y, 0, 255).astype(np.uint8)
+        enhanced_ycrcb = cv2.merge([enhanced_y, cr, cb])
+        return cv2.cvtColor(enhanced_ycrcb, cv2.COLOR_YCrCb2RGB)
+    def enhance_rendered_fadc_tensor(self,render_img_tensor, alpha=0.35, block_size=8, lf_cut=2):
+
+        """
+        Enhance a rendered image tensor with FADC-style frequency boosting.
+        Args:
+            render_img_tensor (torch.Tensor): 
+                Shape (3, H, W), dtype float32, values in [0, 1], on CUDA or CPU.
+        Returns:
+            torch.Tensor: 
+                Enhanced image, same shape, dtype, device, and value range as input.
+        """
+        # Remember original device and dtype
+        original_device = render_img_tensor.device
+        original_dtype = render_img_tensor.dtype
+        # Step 1: Move to CPU, detach, convert to NumPy (CHW → HWC)
+        img_cpu = render_img_tensor.detach().cpu()
+        img_np = img_cpu.numpy()               # (3, H, W)
+        img_np = np.transpose(img_np, (1, 2, 0))  # (H, W, 3)
+
+        # Step 2: Convert [0,1] float → uint8 [0,255]
+
+        img_uint8 = (img_np * 255).clip(0, 255).astype(np.uint8)
+
+        # Step 3: Apply enhancement (pure CPU operation)
+
+        enhanced_uint8 = self.enhance_image_fadc_style(
+            img_uint8,
+            alpha=alpha,
+            block_size=block_size,
+            lf_cut=lf_cut
+        )  # returns (H, W, 3), uint8, RGB
+
+        # Step 4: Convert back to [0,1] float32
+        enhanced_float = enhanced_uint8.astype(np.float32) / 255.0  # (H, W, 3)
+        # Step 5: Back to CHW torch tensor and move to original device
+
+        enhanced_tensor = torch.from_numpy(
+            np.transpose(enhanced_float, (2, 0, 1))
+        ).to(original_device).to(original_dtype)  # (3, H, W), on original device
+
+        return enhanced_tensor
+        

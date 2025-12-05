@@ -416,8 +416,9 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4,debug = False,camer
         transformed_frame.transform(np.linalg.inv(T_camera))
         # 可视化
         if debug:
-            o3d.visualization.draw_geometries([original_frame, transformed_frame])
+            # o3d.visualization.draw_geometries([original_frame, transformed_frame])
         # o3d.visualization.draw_geometries([original_frame, transformed_frame])
+            pass
         
         camera = Camera(colmap_id=0,R=T_camera[:3,:3].T,T=T_camera[:3,3],
                         FoVx=fovx,FoVy=fovy,Cx=cx,Cy=cy,image_height=height,image_width=width,
@@ -427,7 +428,42 @@ def box2gscamera(width,height,K:np,box:np,camera_num:int = 4,debug = False,camer
     # 返回的是一个相机队列
     return cameras
 
-
+def simple_visualize_camera_sequences(cameras_list, camera_ref_list):
+    """
+    简化版本的可视化函数
+    """
+    geometries = []
+    
+    # 世界坐标系
+    world_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+    geometries.append(world_frame)
+    
+    # 参考相机序列（红色）
+    for i, camera_ref in enumerate(camera_ref_list):
+        T_ref = np.eye(4)
+        T_ref[:3, :3] = camera_ref.R.T
+        T_ref[:3, 3] = camera_ref.T.squeeze()
+        
+        ref_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15, origin=[0, 0, 0])
+        ref_frame.transform(np.linalg.inv(T_ref))
+        ref_frame.paint_uniform_color([1, 0, 0])  # 红色
+        
+        geometries.append(ref_frame)
+    
+    # 普通相机序列（蓝色）
+    for i, camera in enumerate(cameras_list):
+        T_cam = np.eye(4)
+        T_cam[:3, :3] = camera.R.T
+        T_cam[:3, 3] = camera.T.squeeze()
+        
+        cam_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+        cam_frame.transform(np.linalg.inv(T_cam))
+        cam_frame.paint_uniform_color([0, 0, 1])  # 蓝色
+        
+        geometries.append(cam_frame)
+    
+    o3d.visualization.draw_geometries(geometries, window_name="相机序列坐标系")
+    return geometries
 def box2gscamera_linemod(width,height,K:np,box:np,camera_num:int = 4):
     '''
     此函数通过box和参数生成多个gs的camera

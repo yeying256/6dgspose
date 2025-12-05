@@ -67,10 +67,20 @@ match:
 #   pnp_reprojection_error: 5
 #   use_pose_refine: True
 
-# 优化参数
+# 优化参数 gspose 原始优化参数
+# refine:
+#   START_LR : 5e-3
+#   MAX_STEPS : 100
+#   END_LR : 1e-6
+#   WARMUP : 10
+#   USE_SSIM : True
+#   USE_MS_SSIM : True
+#   EARLY_STOP_MIN_STEPS : 5
+#   EARLY_STOP_LOSS_GRAD_NORM : 1e-4
+
 refine:
   START_LR : 5e-3
-  MAX_STEPS : 100
+  MAX_STEPS : 1000
   END_LR : 1e-6
   WARMUP : 10
   USE_SSIM : True
@@ -79,8 +89,9 @@ refine:
   EARLY_STOP_LOSS_GRAD_NORM : 1e-4
 
 gspose_model_path: "/home/wangxiao/6d_pose_learn/src/myproject/gspose_model/model_weights.pth"
+# gspose_model_path: "/home/wangxiao/6d_pose_learn/src/myproject/gspose_model/model_weightstest___.pth"
 
-metric_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr/metric_out.txt"
+metric_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr/metric_out_50photo.txt"
 
 log_dir: "/media/wangxiao/Newsmy/linemod/log"
 

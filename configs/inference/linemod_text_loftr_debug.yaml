@@ -1,0 +1,113 @@
+data:
+  dataname: "linemod"
+  # 这个是数据集的位置，下一级的数据是需要使用代码搜索的
+  dataset_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_test_all/test"
+  # 第二个版本中需要一些训练集的数据
+  data_ref_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_test_all/test"
+
+  # data_ref_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_train/train"
+  # 因为每个onepose的数据集下面有几个subdir，名字后面加上 -1 -2等
+  subdir: ""
+  # 这个是每一个子数据下面的照片的路径
+  color: "rgb"
+  # 每一个3dgs的
+  gsdir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr"
+  # gs_subdir: "test/point_cloud/iteration_30000/point_cloud.ply"
+  gs_subdir: "3DGO_model.ply"
+
+
+  colmap_path: "/media/wangxiao/Newsmy/linemod/linemod_train_sfm"
+
+
+  # 这个是每一个子数据下面的相机参数的路径
+  pose: "scene_gt.json"
+  intrin: "scene_camera.json"
+  box_dir: "/media/wangxiao/Newsmy/linemod/raw/lm_models/models/models_info.json"
+
+  maskforder_dir: "mask"
+
+  clip: True
+
+  no_target_name_lists: 
+    - "000001"
+    - "000002"
+    - "000003"
+    - "000004"
+    - "000005"        
+    - "000007"
+# 是否图形化调试
+
+ref_output_dir: "/media/wangxiao/Newsmy/linemod/reference_database/LINEMOD/LM_database_probmask"
+
+
+fadc: True         
+# loftr
+debug: True          
+camera_distance_scale: 2.0
+match:
+  extractor:                  
+    name: "loftr"
+    max_num_keypoints: 2048
+  matcher: 
+    name: "loftr"
+    # features: "superpoint"
+  confidence_threshold: 0.9       
+   
+  camera_num: 10
+  pnp_reprojection_error: 5
+  use_pose_refine: True
+
+
+
+# 记录一些过程数据，方便调试
+# match:
+#   extractor:
+#     name: "SuperPoint"
+#     max_num_keypoints: 2048
+#   matcher: 
+#     name: "LightGlue"
+#     features: "superpoint"
+#   confidence_threshold: 0.90
+
+#   camera_num: 10
+#   pnp_reprojection_error: 5
+#   use_pose_refine: True
+
+# 优化参数 gspose 原始优化参数
+# refine:
+#   START_LR : 5e-3
+#   MAX_STEPS : 100
+#   END_LR : 1e-6
+#   WARMUP : 10
+#   USE_SSIM : True
+#   USE_MS_SSIM : True
+#   EARLY_STOP_MIN_STEPS : 5
+#   EARLY_STOP_LOSS_GRAD_NORM : 1e-4
+
+refine:
+  START_LR : 5e-3
+  MAX_STEPS : 1000
+  END_LR : 1e-6
+  WARMUP : 10
+  USE_SSIM : True
+  USE_MS_SSIM : True
+  EARLY_STOP_MIN_STEPS : 5
+  EARLY_STOP_LOSS_GRAD_NORM : 1e-4
+
+gspose_model_path: "/home/wangxiao/6d_pose_learn/src/myproject/gspose_model/model_weights.pth"
+# gspose_model_path: "/home/wangxiao/6d_pose_learn/src/myproject/gspose_model/model_weightstest___.pth"
+
+metric_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pgsr/metric_out_debug_linemod.txt"
+
+log_dir: "/media/wangxiao/Newsmy/linemod/log"
+
+
+pose_out_dir: "/media/wangxiao/Newsmy/linemod/linemod_pose_out"
+
+
+
+
+
+
+
+

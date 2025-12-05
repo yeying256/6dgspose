@@ -144,9 +144,13 @@ class GS_refine:
         # show_gs_img(target_img)
 
         # 测试代码
+        start_time = time.perf_counter()
+
+        step_times = [] 
 
         iter_losses = list()
         for iter_step in range(self.CFG.MAX_STEPS):
+            step_start = time.perf_counter()
             # GS_Renderer是渲染器
             render_img = GS_Renderer(init_camera, gaussians, self.gaussian_PipeP, self.gaussian_BG)['render'] * trunc_mask
             # show_gs_img(render_img)
@@ -158,7 +162,7 @@ class GS_refine:
 
             if self.CFG.USE_SSIM:
                 loss += (1 - self.SSIM_METRIC(render_img[None, ...], target_img[None, ...]))
-                print(f"step ={iter_step} loss = {loss}")
+                # print(f"step ={iter_step} loss = {loss}")
             if self.CFG.USE_MS_SSIM:
                 loss += (1 - self.MS_SSIM_METRIC(render_img[None, ...], target_img[None, ...]))
 
@@ -168,6 +172,12 @@ class GS_refine:
             optimizer.zero_grad()
 
             iter_losses.append(loss.item())
+
+            # 记录当前 step 耗时
+
+            step_duration = time.perf_counter() - step_start
+            step_times.append(step_duration)
+
             if iter_step >= self.CFG.EARLY_STOP_MIN_STEPS:
                 loss_grads = (torch.as_tensor(iter_losses)[1:] - torch.as_tensor(iter_losses)[:-1]).abs()
                 if loss_grads[-self.CFG.EARLY_STOP_MIN_STEPS:].mean() < self.CFG.EARLY_STOP_LOSS_GRAD_NORM: # early stop the refinement
@@ -175,11 +185,19 @@ class GS_refine:
         
         gs3d_delta_RT = gaussians.get_delta_pose.squeeze(0).detach().cpu().numpy()
 
+        # 循环结束后计算总耗时
+
+        total_time = time.perf_counter() - start_time
+        avg_step_time = sum(step_times) / len(step_times) if step_times else 0.0
+
 
         outp = {
             'gs3d_delta_RT': gs3d_delta_RT,
             'iter_step': iter_step,
             'render_img': render_img,
+            'total_time_sec': total_time,
+            'avg_step_time_sec': avg_step_time,
+            'step_times_sec': step_times,  # 可选：保留每步时间用于详细分析
         }
         
         if return_loss:

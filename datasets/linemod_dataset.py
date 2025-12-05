@@ -47,6 +47,7 @@ def extract_model_info(json_file):
     diameter = {}
     box = {}
     is_sym = {}
+    bbox3d_diameter = {}
 
     # 加载 JSON 数据
     with open(json_file, 'r') as f:
@@ -79,7 +80,18 @@ def extract_model_info(json_file):
         else:
             is_sym[model_id] = False
 
-    return diameter, box, is_sym
+        
+        min_3D_corner = np.array([min_x, min_y, min_z])  # 3D边界框的最小角点 [x_min, y_min, z_min]
+        max_3D_corner = np.array([max_x, max_y, max_z])  # 3D边界框的最大角点 [x_max, y_max, z_max]
+        obj_bbox3D_dims = max_3D_corner - min_3D_corner  # 3D边界框的尺寸 [width, height, depth]
+
+        # 计算对角线长度
+        # self.bbox3d_diameter = np.linalg.norm(obj_bbox3D_dims)
+        bbox3d_diameter[model_id] = np.linalg.norm(obj_bbox3D_dims)/1000.0
+
+
+
+    return diameter, box, is_sym , bbox3d_diameter
 
 
 # 定义函数：从 JSON 文件中提取内参矩阵
@@ -206,7 +218,7 @@ class linemod_dataset(dataset_base):
         self.debug = config['debug']
 
         # 获取每个对象的直径，边界框，是否是对称的
-        self.diameter,self.box,self.is_sym = extract_model_info(self.box_dir)
+        self.diameter,self.box,self.is_sym ,self.bbox3d_diameter = extract_model_info(self.box_dir)
 
         self.maskforder_dir = config['data']['maskforder_dir']
 
@@ -228,6 +240,11 @@ class linemod_dataset(dataset_base):
             self.pose_out_dir = config['pose_out_dir']
         except:
             self.pose_out_dir = None
+        
+        try:
+            self.fadc = config['fadc']
+        except:
+            self.fadc = None
 
         # refin参数
         self.refine_CFG = SimpleNamespace(
@@ -272,7 +289,9 @@ class linemod_dataset(dataset_base):
 
             # 查找所有的图片
             color_forder_dir = os.path.join(temp_dir,self.color_forder_name)
-            imags= os.listdir(color_forder_dir)
+            unimags= os.listdir(color_forder_dir)
+            # 排过顺序，因为gspose那个参考数据集严重依赖顺序
+            imags = sorted(unimags, key=lambda x: int(x.split('.')[0]))
             # 查找这个目标的所有的内参 
             cam_intr_dir = os.path.join(temp_dir,intrinsics_forder_name)
             camera_K = extract_cam_K_from_file(cam_intr_dir)
@@ -295,6 +314,7 @@ class linemod_dataset(dataset_base):
             # = extract_homogeneous_matrices_from_file(f"{ref_dir}/{object_name}/{self.pose_forder_name}")
             # 查找mask
             masks_dirs = search_mask_dir(f'{temp_dir}/{self.maskforder_dir}')
+
 
             for imag in imags:
                 # 遍历所有的图片
@@ -385,7 +405,7 @@ def create_reference_database_from_RGB_images(model_func,
     zoom_fps_images = gs_utils.zoom_in_and_crop_with_offset(image=ref_fps_images, # KxHxWx3 -> KxSxSx3
                                                                 K=ref_fps_camKs, 
                                                                 t=ref_fps_poses[:, :3, 3], 
-                                                                radius=obj_dataset.diameter[id]/2,
+                                                                radius=obj_dataset.bbox3d_diameter[id]/2,
                                                                 target_size=CFG.zoom_image_scale, 
                                                                 margin=CFG.zoom_image_margin)['zoom_image']
     with torch.no_grad():
@@ -426,11 +446,11 @@ def create_reference_database_from_RGB_images(model_func,
         # pose = ref_data.get('allo_pose', ref_data['pose']) # 4x4
 
         refer_allo_Rs.append(pose[:3, :3])
-        ref_tz = (1 + CFG.zoom_image_margin) * camK[:2, :2].max() * obj_dataset.diameter[id] / CFG.zoom_image_scale
+        ref_tz = (1 + CFG.zoom_image_margin) * camK[:2, :2].max() * obj_dataset.bbox3d_diameter[id] / CFG.zoom_image_scale
         zoom_outp = gs_utils.zoom_in_and_crop_with_offset(image=image, # HxWx3 -> SxSx3
                                                             K=camK, 
                                                             t=pose[:3, 3], 
-                                                            radius=obj_dataset.diameter[id]/2,
+                                                            radius=obj_dataset.bbox3d_diameter[id]/2,
                                                             target_size=CFG.zoom_image_scale, 
                                                             margin=CFG.zoom_image_margin) # SxSx3
         with torch.no_grad():

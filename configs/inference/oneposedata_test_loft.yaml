@@ -18,6 +18,8 @@ data:
   box_dir: "box3d_corners.txt"
 
   clip: True
+  
+do_target: None
 
 debug: False
 match:

@@ -63,10 +63,18 @@ class onepose_dataset(dataset_base):
             self.debug_target = None
         
 
+
+        
         self.camera_gap = config['camera_gap']
 
+        if config['do_target'] == 'None':
+            self.object_lists = os.listdir(self.dataset_dir)
+        else:
+            self.object_lists = config['do_target']
+
+
         # 查找所有的子文件夹
-        self.object_lists = os.listdir(self.dataset_dir)
+        # self.object_lists = os.listdir(self.dataset_dir)
         # 遍历所有的目标，比如说瓶子等
         for object_name in self.object_lists:
             self.sub_name_lists.append(object_name)

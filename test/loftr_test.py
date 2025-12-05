@@ -42,7 +42,7 @@ def visualize_matches(img1, img2, mkpts1, mkpts2):
         ax.plot([mkpts1[i, 0], mkpts2[i, 0] + w1], [mkpts1[i, 1], mkpts2[i, 1]], 'g-', linewidth=1)
     plt.show()
 
-def main(image_path1, image_path2):
+def main(image_path1, image_path2,ckpt_path):
 
     #     Example:
     #     >>> img1 = torch.rand(1, 1, 320, 200)
@@ -52,7 +52,7 @@ def main(image_path1, image_path2):
     #     >>> out = loftr(input)
     # """
     # 加载模型
-    model = LoFTR('outdoor')
+    model = LoFTR(ckpt_path)
 
     # 读取图像
     img1, img1_tensor = read_image(image_path1)
@@ -77,6 +77,6 @@ if __name__ == "__main__":
 
     
     # 预训练权重路径
-    # ckpt_path = "weights/outdoor_ds.ckpt"
+    ckpt_path = "weights/outdoor_ds.ckpt"
 
-    main(image_path1, image_path2)
+    main(image_path1, image_path2,ckpt_path)
